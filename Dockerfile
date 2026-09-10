@@ -18,7 +18,7 @@ FROM ://microsoft.com
 WORKDIR /app
 COPY --from=build-env /app/out .
 
-# Открываем порты для облака Amvera
+# Открываем порты для облака
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 
