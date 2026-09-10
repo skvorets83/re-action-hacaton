@@ -31,9 +31,9 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "https://vercel.app")
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        policy.AllowAnyOrigin()   // Разрешить любой сайт (больше никаких проблем со слешами и URL!)
+              .AllowAnyMethod()   // Разрешить GET, POST, PUT, DELETE
+              .AllowAnyHeader();  // Разрешить любые заголовки
     });
 });
 
