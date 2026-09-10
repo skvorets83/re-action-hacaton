@@ -24,12 +24,12 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+app.UseCors("AllowAll");
 
 // Swagger доступен всегда для тестов команды и жюри
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();
 

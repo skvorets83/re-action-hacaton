@@ -86,5 +86,19 @@ namespace GanttManager.API.Controllers
             await _context.SaveChangesAsync();
             return Ok(task);
         }
+        // 6. УДАЛЕНИЕ ЗАДАЧИ И ВСЕХ ЕЁ СВЯЗЕЙ (ДЛЯ ПУНКТА 4 ФРОНТЕНДА)
+        [HttpDelete("tasks/{id}")]
+        public async Task<IActionResult> DeleteTask(Guid id)
+        {
+            var task = await _context.Tasks.FindAsync(id);
+            if (task == null) return NotFound(new { message = "Задача не найдена" });
+
+            // Удаляем задачу (связи в БД почистятся автоматически по правилу Cascade)
+            _context.Tasks.Remove(task);
+            await _context.SaveChangesAsync();
+
+            return NoContent(); // Статус 204 (Успешно удалено, контента нет)
+        }
+
     }
 }
