@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc.ModelBinding; // Добавлено для управления валидацией
 
 namespace GanttManager.API.Controllers
 {
@@ -54,28 +55,47 @@ namespace GanttManager.API.Controllers
 
         // 4. Создать новую задачу в проекте
         [HttpPost("tasks")]
-        public async Task<ActionResult<TaskItem>> CreateTask([FromBody] TaskItem task)
+        public async Task<ActionResult<TaskItem>> CreateTask([FromBody] TaskItem dto)
         {
-            _context.Tasks.Add(task);
+            // Игнорируем валидацию сложных системных объектов (Project, Dependencies), 
+            // если фронтенд их не прислал или прислал пустыми, чтобы не было ошибки 400.
+            ModelState.Remove("Project");
+            ModelState.Remove("Dependencies");
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            _context.Tasks.Add(dto);
             await _context.SaveChangesAsync();
-            return Ok(task);
+            return Ok(dto);
         }
 
         // 5. ОБНОВЛЕНИЕ ЗАДАЧИ (СЮДА УЧАСТНИК 2 ВСТАВИТ ПЕРЕСЧЕТ ГАНТА)
         [HttpPut("tasks/{id}")]
-        public async Task<IActionResult> UpdateTask(Guid id, [FromBody] TaskItem updatedTask)
+        public async Task<IActionResult> UpdateTask(Guid id, [FromBody] TaskItem dto)
         {
-            if (id != updatedTask.Id) return BadRequest(new { message = "ID задачи не совпадает" });
+            ModelState.Remove("Project");
+            ModelState.Remove("Dependencies");
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            if (id != dto.Id) return BadRequest(new { message = "ID задачи не совпадает" });
 
             var task = await _context.Tasks.FindAsync(id);
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
-            // Обновляем базовые поля, пришедшие с фронтенда
-            task.Name = updatedTask.Name;
-            task.Status = updatedTask.Status;
-            task.StartDate = updatedTask.StartDate;
-            task.EndDate = updatedTask.EndDate;
-            task.ExecutorId = updatedTask.ExecutorId;
+            // Обновляем базовые поля, пришедшие с фронтенда из dto
+            task.Name = dto.Name;
+            task.Status = dto.Status;
+            task.StartDate = dto.StartDate;
+            task.EndDate = dto.EndDate;
+            task.ExecutorId = dto.ExecutorId;
+            task.ProjectId = dto.ProjectId;
 
             // ------------------------------------------------------------
             // TODO ДЛЯ УЧАСТНИКА 2: 
@@ -86,6 +106,7 @@ namespace GanttManager.API.Controllers
             await _context.SaveChangesAsync();
             return Ok(task);
         }
+
         // 6. УДАЛЕНИЕ ЗАДАЧИ И ВСЕХ ЕЁ СВЯЗЕЙ (ДЛЯ ПУНКТА 4 ФРОНТЕНДА)
         [HttpDelete("tasks/{id}")]
         public async Task<IActionResult> DeleteTask(Guid id)
@@ -99,6 +120,5 @@ namespace GanttManager.API.Controllers
 
             return NoContent(); // Статус 204 (Успешно удалено, контента нет)
         }
-
     }
 }
