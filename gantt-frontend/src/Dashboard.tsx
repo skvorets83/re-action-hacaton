@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import GanttChart from './GanttChart';
 import {
   getTasks,
+  getProjects,
+  createProject,
   createTask,
   updateTask,
   deleteTask,
@@ -9,14 +11,8 @@ import {
   persistTasks,
   wouldCreateCycle,
 } from './api/tasksApi';
-import type { Task, TaskStatus } from './api/tasksApi';
+import type { Task, TaskStatus, Project } from './api/tasksApi';
 
-interface Project {
-  id: string;
-  name: string;
-  ownerId?: string;
-  deadline: string;
-}
 
 const EXECUTORS = [
   'Иванов А. (Бэк)',
@@ -34,12 +30,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Список проектов (Блок 1)
-  const [projects, setProjects] = useState<Project[]>([
-    { id: 'p1', name: 'Хакатон MVP', deadline: '2026-09-22' },
-    { id: 'p2', name: 'Внедрение CRM системы', deadline: '2026-11-30' },
-  ]);
-  const [currentProjectId, setCurrentProjectId] = useState<string>('p1');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [currentProjectId, setCurrentProjectId] = useState<string>('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
@@ -65,9 +57,17 @@ export default function Dashboard() {
     (async () => {
       try {
         setLoading(true);
+
+        // Сначала проекты — они нужны, чтобы знать currentProjectId (GUID)
+        const ps = await getProjects();
+        setProjects(ps);
+        if (ps.length > 0) {
+          setCurrentProjectId(ps[0].id);
+        }
+
+        // Потом задачи (пока только первого проекта — как раньше)
         const data = await getTasks();
         const normalized = applyAutoOverdue(data);
-        await persistTasks(normalized);
         setTasks(normalized);
       } catch (e) {
         console.error(e);
@@ -79,11 +79,7 @@ export default function Dashboard() {
 
   // ---------- Задачи текущего проекта ----------
   const currentProjectTasks = useMemo(() => {
-    return tasks.filter(
-      (t) =>
-        t.projectId === currentProjectId ||
-        (!t.projectId && currentProjectId === 'p1')
-    );
+    return tasks.filter((t) => t.projectId === currentProjectId);
   }, [tasks, currentProjectId]);
 
   // ---------- Метрики ----------
@@ -121,20 +117,28 @@ export default function Dashboard() {
   }, [currentProjectTasks, activeTab, searchQuery]);
 
   // ---------- Создание проекта ----------
-  const handleCreateProject = (e: React.FormEvent) => {
+  const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectForm.name || !projectForm.deadline) return;
+    if (!projectForm.name) return;
 
-    const newProject: Project = {
-      id: 'p_' + Date.now(),
-      name: projectForm.name,
-      deadline: projectForm.deadline,
-    };
+    try {
+      const created = await createProject({
+        name: projectForm.name,
+        description: '',
+        deadline: projectForm.deadline,
+      });
 
-    setProjects([...projects, newProject]);
-    setCurrentProjectId(newProject.id);
-    setIsProjectModalOpen(false);
-    setProjectForm({ name: '', deadline: '' });
+      // Перезагружаем с бэка, чтобы получить реальные GUID'ы всех проектов
+      const ps = await getProjects();
+      setProjects(ps);
+      setCurrentProjectId(created.id);
+
+      setIsProjectModalOpen(false);
+      setProjectForm({ name: '', deadline: '' });
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось создать проект на сервере');
+    }
   };
 
   // ---------- Открытие модалки задачи ----------
