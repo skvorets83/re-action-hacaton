@@ -45,6 +45,7 @@ export default function Dashboard() {
   const [form, setForm] = useState({
     name: '',
     executor: '',
+    executorId: '',
     start: '',
     end: '',
     status: 'Todo' as TaskStatus,
@@ -151,6 +152,7 @@ export default function Dashboard() {
     setForm({
       name: '',
       executor: '',
+      executorId: '',
       start: '',
       end: '',
       status: 'Todo',
@@ -166,6 +168,7 @@ export default function Dashboard() {
     setForm({
       name: t.name,
       executor: t.executor,
+      executorId: t.executorId ?? '',
       start: t.start,
       end: t.end,
       status: t.status,
@@ -182,8 +185,8 @@ export default function Dashboard() {
     try {
       const taskPayload = {
         name: form.name,
-        executor: form.executor,
-        executorId: activeProject?.ownerId,
+        executor: form.executor || 'Не назначен',
+        executorId: form.executorId || '00000000-0000-0000-0000-000000000000',
         start: form.start,
         end: form.end,
         status: form.status,
@@ -594,107 +597,114 @@ export default function Dashboard() {
                   Исполнитель
                 </label>
                 <select
-                  value={form.executor}
-                  onChange={(e) => setForm({ ...form, executor: e.target.value })}
+                  value={form.executorId ?? ''}
+                  onChange={(e) => {
+                    const u = users.find((x) => x.id === e.target.value);
+                    setForm({
+                      ...form,
+                      executorId: e.target.value,
+                      executor: u?.name ?? '',
+                    });
+                  }}
                   className="w-full border border-gray-200 rounded-lg p-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {EXECUTORS.map((e) => (
-                    <option key={e} value={e}>
-                      {e}
+                  <option value="">— Не назначен —</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
                     </option>
                   ))}
                 </select>
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      Старт
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={form.start}
+                      onChange={(e) => setForm({ ...form, start: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg p-2.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      Конец
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={form.end}
+                      onChange={(e) => setForm({ ...form, end: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg p-2.5 text-sm"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                    Старт
+                    Статус
                   </label>
-                  <input
-                    type="date"
-                    required
-                    value={form.start}
-                    onChange={(e) => setForm({ ...form, start: e.target.value })}
-                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm"
-                  />
+                  <select
+                    value={form.status}
+                    onChange={(e) =>
+                      setForm({ ...form, status: e.target.value as TaskStatus })
+                    }
+                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm bg-white"
+                  >
+                    {(['Todo', 'InProgress', 'Done', 'Overdue'] as TaskStatus[]).map((s) => (
+                      <option key={s} value={s}>
+                        {statusLabel[s]}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                    Конец
+                    Зависит от задач
                   </label>
-                  <input
-                    type="date"
-                    required
-                    value={form.end}
-                    onChange={(e) => setForm({ ...form, end: e.target.value })}
-                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm"
-                  />
+                  <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                    {availableDeps.length === 0 ? (
+                      <p className="text-xs text-gray-400 p-2">
+                        Нет других задач в этом проекте
+                      </p>
+                    ) : (
+                      availableDeps.map((t) => (
+                        <label
+                          key={t.id}
+                          className="flex items-center gap-2 text-sm p-1 hover:bg-gray-50 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={form.dependencies.includes(t.id)}
+                            onChange={() => toggleDep(t.id)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="truncate text-gray-700">{t.name}</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                  Статус
-                </label>
-                <select
-                  value={form.status}
-                  onChange={(e) =>
-                    setForm({ ...form, status: e.target.value as TaskStatus })
-                  }
-                  className="w-full border border-gray-200 rounded-lg p-2.5 text-sm bg-white"
-                >
-                  {(['Todo', 'InProgress', 'Done', 'Overdue'] as TaskStatus[]).map((s) => (
-                    <option key={s} value={s}>
-                      {statusLabel[s]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                  Зависит от задач
-                </label>
-                <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
-                  {availableDeps.length === 0 ? (
-                    <p className="text-xs text-gray-400 p-2">
-                      Нет других задач в этом проекте
-                    </p>
-                  ) : (
-                    availableDeps.map((t) => (
-                      <label
-                        key={t.id}
-                        className="flex items-center gap-2 text-sm p-1 hover:bg-gray-50 rounded cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={form.dependencies.includes(t.id)}
-                          onChange={() => toggleDep(t.id)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="truncate text-gray-700">{t.name}</span>
-                      </label>
-                    ))
-                  )}
+                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg text-sm transition-colors"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-lg text-sm shadow-sm transition-colors"
+                  >
+                    Сохранить
+                  </button>
                 </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg text-sm transition-colors"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="submit"
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-lg text-sm shadow-sm transition-colors"
-                >
-                  Сохранить
-                </button>
-              </div>
             </form>
           </div>
         </div>
