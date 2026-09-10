@@ -494,7 +494,7 @@ export default function Dashboard() {
           <GanttChart
             tasks={currentProjectTasks}
             onTasksUpdate={(updated) => setTasks(applyAutoOverdue(updated))}
-            onTaskClick={openEdit}
+
           />
         </div>
       )}
