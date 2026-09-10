@@ -61,43 +61,44 @@ namespace GanttManager.API.Controllers
             return Ok(task);
         }
 
-        // 5. ОБНОВЛЕНИЕ ЗАДАЧИ С КАСКАДНЫМ ПЕРЕСЧЕТОМ ДАТ ГАНТА
+        // 5. ОБНОВЛЕНИЕ ЗАДАЧИ (СЮДА УЧАСТНИК 2 ВСТАВИТ ПЕРЕСЧЕТ ГАНТА)
         [HttpPut("tasks/{id}")]
         public async Task<IActionResult> UpdateTask(Guid id, [FromBody] TaskItem updatedTask)
         {
             if (id != updatedTask.Id) return BadRequest(new { message = "ID задачи не совпадает" });
 
-            // Загружаем оригинальную задачу из БД до её изменения
             var task = await _context.Tasks.FindAsync(id);
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
-            // ВЫЧИСЛЯЕМ СДВИГ: На сколько дней пользователь передвинул дату начала на фронтенде
-            int daysShift = (updatedTask.StartDate - task.StartDate).Days;
-
-            // Сначала валидируем новые даты через твой сервис валидации!
-            var validationService = new Services.TaskValidationService();
-            if (!validationService.ValidateDates(updatedTask.StartDate, updatedTask.EndDate, out string error))
-            {
-                return BadRequest(new { message = error });
-            }
-
-            // Обновляем базовые поля текущей задачи
+            // Обновляем базовые поля, пришедшие с фронтенда
             task.Name = updatedTask.Name;
             task.Status = updatedTask.Status;
             task.StartDate = updatedTask.StartDate;
             task.EndDate = updatedTask.EndDate;
             task.ExecutorId = updatedTask.ExecutorId;
 
-            // ЕСЛИ СДВИГ БЫЛ — ЗАПУСКАЕМ ТВОЙ АЛГОРИТМ ПЕРЕСЧЕТА ГРАФА
-            if (daysShift != 0)
-            {
-                var ganttEngine = new Services.GanttEngine();
-                await ganttEngine.RecalculateDependenciesAsync(_context, task.ProjectId, id, daysShift);
-            }
+            // ------------------------------------------------------------
+            // TODO ДЛЯ УЧАСТНИКА 2: 
+            // Вызвать алгоритм каскадного пересчета дат для зависимых задач!
+            // Например: Вызвать метод GanttService.Recalculate(task.ProjectId);
+            // ------------------------------------------------------------
 
-            // Сохраняем всё скопом в PostgreSQL (и саму задачу, и все её сдвинутые зависимости!)
             await _context.SaveChangesAsync();
             return Ok(task);
         }
+        // 6. УДАЛЕНИЕ ЗАДАЧИ И ВСЕХ ЕЁ СВЯЗЕЙ (ДЛЯ ПУНКТА 4 ФРОНТЕНДА)
+        [HttpDelete("tasks/{id}")]
+        public async Task<IActionResult> DeleteTask(Guid id)
+        {
+            var task = await _context.Tasks.FindAsync(id);
+            if (task == null) return NotFound(new { message = "Задача не найдена" });
+
+            // Удаляем задачу (связи в БД почистятся автоматически по правилу Cascade)
+            _context.Tasks.Remove(task);
+            await _context.SaveChangesAsync();
+
+            return NoContent(); // Статус 204 (Успешно удалено, контента нет)
+        }
+
     }
 }

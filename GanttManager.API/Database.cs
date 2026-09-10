@@ -4,7 +4,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GanttManager.API
 {
-
+    // ==========================================
+    // 📊 МОДЕЛИ ТАБЛИЦ БАЗЫ ДАННЫХ
+    // ==========================================
     public class User
     {
         public Guid Id { get; set; } = Guid.NewGuid();

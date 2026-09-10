@@ -1,16 +1,49 @@
 version: '3.8'
 
 services:
-  gantt_db:
+  # ========================================================
+  # 🗄️ БАЗА ДАННЫХ (POSTGRESQL) С СОХРАНЕНИЕМ ДАННЫХ В ОБЪЕМ
+  # ========================================================
+  gantt-db:
     image: postgres:15-alpine
-    container_name: gantt_postgresql
+    container_name: gantt-prod-postgres
+    restart: always  # Автоматически перезапускать базу при сбое сервера
     environment:
-      POSTGRES_PASSWORD: SecretPassword123
-      POSTGRES_DB: gantt_project_db
-    ports:
-      - "5433:5432"  # Компьютер будет стучаться на 5433, а внутри Docker база примет на 5432
+      POSTGRES_USER: gantt_prod_admin
+      POSTGRES_PASSWORD: Garlick11.06.  # Поменяйте на свой секретный пароль
+      POSTGRES_DB: gantt_production_db
+    # На сервере закрываем порт 5432 наружу! Доступ к БД будет ТОЛЬКО у C# внутри докер-сети
+    expose:
+      - "5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_prod_data:/var/lib/postgresql/data
+    networks:
+      - gantt-prod-network
 
+  # ========================================================
+  # 🚀 БЭКЕНД-API НА C# (.NET) С БОЕВЫМИ НАСТРОЙКАМИ
+  # ========================================================
+  gantt-api:
+    build:
+      context: ./GanttManager
+      dockerfile: Dockerfile
+    container_name: gantt-prod-api
+    restart: always
+    ports:
+      # На сервере пробрасываем стандартный HTTP-порт 80, чтобы фронтенд обращался напрямую к IP/домену
+      - "80:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production  # Включаем Production-режим (высокая скорость, безопасность)
+      - ConnectionStrings__DefaultConnection=Host=gantt-db;Port=5432;Database=gantt_production_db;Username=gantt_prod_admin;Password=Prod_Secret_Gantt_Password_2026!
+    depends_on:
+      - gantt-db
+    networks:
+      - gantt-prod-network
+
+# Выделенный объем, чтобы при перезапуске контейнера данные пользователей и задач не удалялись
 volumes:
-  pgdata:
+  postgres_prod_data:
+
+networks:
+  gantt-prod-network:
+    driver: bridge
