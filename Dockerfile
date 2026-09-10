@@ -14,7 +14,7 @@ WORKDIR /app/GanttManager.API
 RUN dotnet publish -c Release -o /app/out
 
 # 2. Этап запуска готового приложения
-FROM ://microsoft.com
+FROM ://microsoft.com AS runtime-env
 WORKDIR /app
 COPY --from=build-env /app/out .
 
