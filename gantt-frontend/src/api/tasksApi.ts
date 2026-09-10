@@ -24,7 +24,7 @@ export interface Project {
     tasks?: Task[];
 }
 
-export const API_BASE_URL = 'https://re-action-hacaton.relaxdev.ru';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 // ---------- HTTP ----------
 async function http<T>(path: string, options: RequestInit = {}): Promise<T> {
