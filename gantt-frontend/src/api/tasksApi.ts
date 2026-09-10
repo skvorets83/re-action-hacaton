@@ -1,33 +1,107 @@
-import axios from 'axios';
+// src/api/taskApi.ts
 
-// URL-адрес C# бэкенда Участника 2. 
-// По умолчанию ASP.NET Core локально запускается на http://localhost:5000 или http://localhost:5173/api
-// Пусть Участник 2 скажет свой точный порт, и вы измените его здесь.
-const API_URL = 'http://localhost:5000/api';
+export interface Task {
+    id: string;
+    name: string;
+    executor: string;
+    start: string; // YYYY-MM-DD
+    end: string;   // YYYY-MM-DD
+    status: 'Todo' | 'InProgress' | 'Done' | 'Overdue';
+}
 
-export const tasksApi = {
-    /**
-     * 1. Получить все задачи проекта с бэкенда
-     * Метод: GET /api/tasks
-     */
-    async getTasks() {
-        const response = await axios.get(`${API_URL}/tasks`);
-        return response.data; // Возвращает массив задач из базы данных PostgreSQL
+// Временное хранилище (пока нет бэкенда)
+let tasksDB: Task[] = [
+    {
+        id: '1',
+        name: 'Разработка архитектуры базы данных',
+        executor: 'Иванов А. (Бэк)',
+        start: '2026-09-10',
+        end: '2026-09-11',
+        status: 'Done',
     },
+    {
+        id: '2',
+        name: 'Интеграция JWT-авторизации и защиты',
+        executor: 'Петров С. (Бэк)',
+        start: '2026-09-10',
+        end: '2026-09-12',
+        status: 'InProgress',
+    },
+    {
+        id: '3',
+        name: 'Верстка интерактивной диаграммы Ганта',
+        executor: 'Сидоров К. (Фронт Lead)',
+        start: '2026-09-11',
+        end: '2026-09-15',
+        status: 'Todo',
+    },
+    {
+        id: '4',
+        name: 'Сквозное тестирование безопасности API',
+        executor: 'Тимлид',
+        start: '2026-09-08',
+        end: '2026-09-09',
+        status: 'Overdue',
+    },
+];
 
-    /**
-     * 2. Обновить даты задачи при перетаскивании полоски на графике Ганта
-     * Метод: PUT /api/tasks/{id}
-     * @param id - уникальный идентификатор задачи
-     * @param startDate - новая дата начала (в формате ISO строки)
-     * @param endDate - новая дата окончания (в формате ISO строки)
-     */
-    async updateTaskDates(id: string, startDate: string, endDate: string) {
-        const response = await axios.put(`${API_URL}/tasks/${id}`, {
-            start: startDate,
-            end: endDate
-        });
-        // Бэкенд C# пересчитает зависимости и вернет нам актуальный массив всех задач
-        return response.data;
-    }
-};
+// Имитация задержки сети
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Получить все задачи
+ */
+export async function getTasks(): Promise<Task[]> {
+    await delay(300); // имитация запроса
+    return [...tasksDB];
+}
+
+/**
+ * Создать новую задачу
+ */
+export async function createTask(data: {
+    name: string;
+    executor: string;
+    start: string;
+    end: string;
+    status?: Task['status'];
+}): Promise<Task> {
+    await delay(250);
+
+    const newTask: Task = {
+        id: Date.now().toString(),
+        name: data.name,
+        executor: data.executor,
+        start: data.start,
+        end: data.end,
+        status: data.status || 'Todo',
+    };
+
+    tasksDB.push(newTask);
+    return newTask;
+}
+
+/**
+ * Обновить статус задачи (на будущее)
+ */
+export async function updateTaskStatus(
+    id: string,
+    status: Task['status']
+): Promise<Task | null> {
+    await delay(200);
+    const task = tasksDB.find(t => t.id === id);
+    if (!task) return null;
+
+    task.status = status;
+    return { ...task };
+}
+
+/**
+ * Удалить задачу (на будущее)
+ */
+export async function deleteTask(id: string): Promise<boolean> {
+    await delay(200);
+    const initialLength = tasksDB.length;
+    tasksDB = tasksDB.filter(t => t.id !== id);
+    return tasksDB.length < initialLength;
+}
