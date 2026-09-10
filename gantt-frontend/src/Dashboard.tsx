@@ -10,16 +10,18 @@ import {
   applyAutoOverdue,
   persistTasks,
   wouldCreateCycle,
+  getUsers,
 } from './api/tasksApi';
-import type { Task, TaskStatus, Project } from './api/tasksApi';
+import type { Task, TaskStatus, Project, User } from './api/tasksApi';
 
 
-const EXECUTORS = [
-  'Иванов А. (Бэк)',
-  'Петров С. (Бэк)',
-  'Сидоров К. (Фронт Lead)',
-  'Тимлид',
-];
+const [users, setUsers] = useState<User[]>([]);
+
+useEffect(() => {
+  getUsers()
+    .then(setUsers)
+    .catch((e) => console.error('Не удалось загрузить пользователей:', e));
+}, []);
 
 type Tab = 'All' | TaskStatus;
 
@@ -208,10 +210,7 @@ export default function Dashboard() {
     setTasks(applyAutoOverdue(updated));
   };
 
-  const handleStatusChange = async (id: string, status: TaskStatus) => {
-    const updated = await updateTask(id, { status });
-    setTasks(applyAutoOverdue(updated));
-  };
+
 
   const statusStyles: Record<TaskStatus, string> = {
     Todo: 'bg-gray-100 text-gray-700',
@@ -456,19 +455,9 @@ export default function Dashboard() {
                         {depNames.length === 0 ? '—' : depNames.join(', ')}
                       </td>
                       <td className="p-4">
-                        <select
-                          value={task.status}
-                          onChange={(e) =>
-                            handleStatusChange(task.id, e.target.value as TaskStatus)
-                          }
-                          className={`px-2 py-1 rounded-full text-xs font-medium border-0 ${statusStyles[task.status]}`}
-                        >
-                          {(['Todo', 'InProgress', 'Done', 'Overdue'] as TaskStatus[]).map((s) => (
-                            <option key={s} value={s}>
-                              {statusLabel[s]}
-                            </option>
-                          ))}
-                        </select>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusStyles[task.status]}`}>
+                          {statusLabel[task.status]}
+                        </span>
                       </td>
                       <td className="p-4 text-right">
                         <button

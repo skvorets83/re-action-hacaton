@@ -40,7 +40,7 @@ function GanttChart({ tasks, onTasksUpdate }: GanttChartProps) {
 
     return {
       id: t.id,
-      name: `${t.name} (${t.executor})`,
+      name: `${t.name}`,
       start: validStart,
       end: validEnd,
       type: 'task',
@@ -52,6 +52,10 @@ function GanttChart({ tasks, onTasksUpdate }: GanttChartProps) {
         backgroundColor: '#f3f4f6',
       },
     };
+  });
+  console.log('=== TASKS ===');
+  formattedTasks.forEach((t) => {
+    console.log('id:', t.id, '| name:', t.name, '| deps:', t.dependencies);
   });
 
   const handleDateChange = async (updatedTask: GanttTask) => {

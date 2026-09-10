@@ -24,6 +24,23 @@ export interface Project {
     tasks?: Task[];
 }
 
+export interface User {
+    id: string;
+    name: string;
+    email?: string;
+}
+
+export async function getUsers(): Promise<User[]> {
+    const data = await http<any>('/api/Gantt/users');   // ← точный URL от бэков
+    return Array.isArray(data)
+        ? data.map((u) => ({
+            id: String(u.id ?? u.Id ?? ''),
+            name: String(u.name ?? u.Name ?? u.fullName ?? u.FullName ?? ''),
+            email: u.email ?? u.Email,
+        }))
+        : [];
+}
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 // ---------- HTTP ----------
