@@ -615,96 +615,97 @@ export default function Dashboard() {
                     </option>
                   ))}
                 </select>
+              </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Старт
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={form.start}
-                      onChange={(e) => setForm({ ...form, start: e.target.value })}
-                      className="w-full border border-gray-200 rounded-lg p-2.5 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Конец
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={form.end}
-                      onChange={(e) => setForm({ ...form, end: e.target.value })}
-                      className="w-full border border-gray-200 rounded-lg p-2.5 text-sm"
-                    />
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                    Статус
+                    Старт
                   </label>
-                  <select
-                    value={form.status}
-                    onChange={(e) =>
-                      setForm({ ...form, status: e.target.value as TaskStatus })
-                    }
-                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm bg-white"
-                  >
-                    {(['Todo', 'InProgress', 'Done', 'Overdue'] as TaskStatus[]).map((s) => (
-                      <option key={s} value={s}>
-                        {statusLabel[s]}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    type="date"
+                    required
+                    value={form.start}
+                    onChange={(e) => setForm({ ...form, start: e.target.value })}
+                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm"
+                  />
                 </div>
-
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                    Зависит от задач
+                    Конец
                   </label>
-                  <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
-                    {availableDeps.length === 0 ? (
-                      <p className="text-xs text-gray-400 p-2">
-                        Нет других задач в этом проекте
-                      </p>
-                    ) : (
-                      availableDeps.map((t) => (
-                        <label
-                          key={t.id}
-                          className="flex items-center gap-2 text-sm p-1 hover:bg-gray-50 rounded cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={form.dependencies.includes(t.id)}
-                            onChange={() => toggleDep(t.id)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="truncate text-gray-700">{t.name}</span>
-                        </label>
-                      ))
-                    )}
-                  </div>
+                  <input
+                    type="date"
+                    required
+                    value={form.end}
+                    onChange={(e) => setForm({ ...form, end: e.target.value })}
+                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm"
+                  />
                 </div>
+              </div>
 
-                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg text-sm transition-colors"
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    type="submit"
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-lg text-sm shadow-sm transition-colors"
-                  >
-                    Сохранить
-                  </button>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                  Статус
+                </label>
+                <select
+                  value={form.status}
+                  onChange={(e) =>
+                    setForm({ ...form, status: e.target.value as TaskStatus })
+                  }
+                  className="w-full border border-gray-200 rounded-lg p-2.5 text-sm bg-white"
+                >
+                  {(['Todo', 'InProgress', 'Done', 'Overdue'] as TaskStatus[]).map((s) => (
+                    <option key={s} value={s}>
+                      {statusLabel[s]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                  Зависит от задач
+                </label>
+                <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                  {availableDeps.length === 0 ? (
+                    <p className="text-xs text-gray-400 p-2">
+                      Нет других задач в этом проекте
+                    </p>
+                  ) : (
+                    availableDeps.map((t) => (
+                      <label
+                        key={t.id}
+                        className="flex items-center gap-2 text-sm p-1 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={form.dependencies.includes(t.id)}
+                          onChange={() => toggleDep(t.id)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="truncate text-gray-700">{t.name}</span>
+                      </label>
+                    ))
+                  )}
                 </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg text-sm transition-colors"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-lg text-sm shadow-sm transition-colors"
+                >
+                  Сохранить
+                </button>
+              </div>
             </form>
           </div>
         </div>
