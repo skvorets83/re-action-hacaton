@@ -1,0 +1,6 @@
+@GanttManager.API_HostAddress = http://localhost:5209
+
+GET {{GanttManager.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
