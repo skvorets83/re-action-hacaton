@@ -15,7 +15,9 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins("http://localhost:5173").AllowAnyMethod().AllowAnyHeader();
+        policy.WithOrigins("http://localhost:5173", "https://re-action-hacaton.vercel.app") 
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
