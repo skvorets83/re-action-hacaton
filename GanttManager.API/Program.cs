@@ -5,7 +5,8 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Жестко зашитая строка подключения к PostgreSQL в Docker (пользователь postgres)
-var connectionString = "Host=localhost;Port=5433;Database=gantt_project_db;Username=postgres;Password=SecretPassword123;Timeout=300";
+var connectionString = "Host=db-team-cntvq2ykq00b4mx01tjøtg30q;Port=5432;Database=db_re_action_hacaton;Username=u_cntvr971k0;Password=QFV5jJ0rm3DBIfk4IxFyHLDndTVXlfl;Timeout=300;SSL Mode=Disable;Trust Server Certificate=true;";
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 
