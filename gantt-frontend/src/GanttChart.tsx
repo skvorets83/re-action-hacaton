@@ -53,10 +53,7 @@ function GanttChart({ tasks, onTasksUpdate }: GanttChartProps) {
       },
     };
   });
-  console.log('=== TASKS ===');
-  formattedTasks.forEach((t) => {
-    console.log('id:', t.id, '| name:', t.name, '| deps:', t.dependencies);
-  });
+
 
   const handleDateChange = async (updatedTask: GanttTask) => {
     try {

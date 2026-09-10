@@ -15,13 +15,7 @@ import {
 import type { Task, TaskStatus, Project, User } from './api/tasksApi';
 
 
-const [users, setUsers] = useState<User[]>([]);
 
-useEffect(() => {
-  getUsers()
-    .then(setUsers)
-    .catch((e) => console.error('Не удалось загрузить пользователей:', e));
-}, []);
 
 type Tab = 'All' | TaskStatus;
 
@@ -31,6 +25,14 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('All');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [users, setUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    getUsers()
+      .then(setUsers)
+      .catch((e) => console.error('Не удалось загрузить пользователей:', e));
+  }, []);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string>('');
@@ -42,7 +44,7 @@ export default function Dashboard() {
   const [projectForm, setProjectForm] = useState({ name: '', deadline: '' });
   const [form, setForm] = useState({
     name: '',
-    executor: EXECUTORS[0],
+    executor: '',
     start: '',
     end: '',
     status: 'Todo' as TaskStatus,
