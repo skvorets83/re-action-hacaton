@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Mvc.ModelBinding; // Добавлено для управления валидацией
 
 namespace GanttManager.API.Controllers
 {
@@ -53,18 +52,18 @@ namespace GanttManager.API.Controllers
                 .ToListAsync();
         }
 
-        // 4. Создать новую задачу в проекте
+        // 4. Создать новую задачу в проекте (Принимает ПЛОСКИЙ JSON)
         [HttpPost("tasks")]
         public async Task<ActionResult<TaskItem>> CreateTask([FromBody] TaskItem dto)
         {
-            // Игнорируем валидацию сложных системных объектов (Project, Dependencies), 
-            // если фронтенд их не прислал или прислал пустыми, чтобы не было ошибки 400.
-            ModelState.Remove("Project");
-            ModelState.Remove("Dependencies");
+            // Полностью сбрасываем автоматическую строгую валидацию .NET,
+            // чтобы убрать ошибки "The dto field is required"
+            ModelState.Clear();
 
-            if (!ModelState.IsValid)
+            // Защитная проверка на случай, если фронтенд прислал битый projectId
+            if (dto == null || dto.ProjectId == Guid.Empty)
             {
-                return BadRequest(ModelState);
+                return BadRequest(new { message = "Ошибка: Передан пустой или некорректный ProjectId! Он должен быть валидным Guid." });
             }
 
             _context.Tasks.Add(dto);
@@ -76,20 +75,15 @@ namespace GanttManager.API.Controllers
         [HttpPut("tasks/{id}")]
         public async Task<IActionResult> UpdateTask(Guid id, [FromBody] TaskItem dto)
         {
-            ModelState.Remove("Project");
-            ModelState.Remove("Dependencies");
+            ModelState.Clear();
 
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
+            if (dto == null) return BadRequest(new { message = "Данные не переданы" });
             if (id != dto.Id) return BadRequest(new { message = "ID задачи не совпадает" });
 
             var task = await _context.Tasks.FindAsync(id);
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
-            // Обновляем базовые поля, пришедшие с фронтенда из dto
+            // Обновляем базовые поля, пришедшие с фронтенда из плоского объекта dto
             task.Name = dto.Name;
             task.Status = dto.Status;
             task.StartDate = dto.StartDate;
