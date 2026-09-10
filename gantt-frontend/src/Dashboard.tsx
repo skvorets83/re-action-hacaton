@@ -150,7 +150,7 @@ export default function Dashboard() {
     setEditingId(null);
     setForm({
       name: '',
-      executor: EXECUTORS[0],
+      executor: '',
       start: '',
       end: '',
       status: 'Todo',
