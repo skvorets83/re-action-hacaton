@@ -3,60 +3,67 @@ import { useState } from 'react';
 import { Gantt, ViewMode } from 'gantt-task-react';
 import type { Task as GanttTask } from 'gantt-task-react';
 import 'gantt-task-react/dist/index.css';
-import { updateTaskDates } from './api/taskApi';
-import type { Task as DashboardTask } from './api/taskApi';
+import { updateTaskDates, type Task } from './api/tasksApi';
 
 interface GanttChartProps {
-  tasks: DashboardTask[];
-  onTasksUpdate: (updatedTasks: DashboardTask[]) => void;
-  onTaskClick?: (taskId: string) => void;
+  tasks: Task[];
+  onTasksUpdate: (updatedTasks: Task[]) => void;
 }
 
-const toYMD = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate()
-  ).padStart(2, '0')}`;
+// YYYY-MM-DD → Date в локальной зоне (без UTC-сдвигов)
+const parseYMD = (s: string): Date => {
+  const clean = s.includes('T') ? s.split('T')[0] : s;
+  return new Date(clean + 'T00:00:00');
+};
 
-function GanttChart({ tasks, onTasksUpdate, onTaskClick }: GanttChartProps) {
+// Date → YYYY-MM-DD (локально, без toISOString)
+const toYMD = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+function GanttChart({ tasks, onTasksUpdate }: GanttChartProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Day);
 
   const formattedTasks: GanttTask[] = tasks.map((t) => {
     let progress = 0;
     if (t.status === 'Done') progress = 100;
-    else if (t.status === 'InProgress') progress = 50;
-    else if (t.status === 'Overdue') progress = 30;
+    if (t.status === 'InProgress') progress = 50;
 
     let barColor = '#3b82f6';
-    let barBg = '#dbeafe';
-    if (t.status === 'Done') { barColor = '#10b981'; barBg = '#d1fae5'; }
-    if (t.status === 'InProgress') { barColor = '#f59e0b'; barBg = '#fef3c7'; }
-    if (t.status === 'Overdue') { barColor = '#ef4444'; barBg = '#fee2e2'; }
+    if (t.status === 'Done') barColor = '#10b981';
+    if (t.status === 'InProgress') barColor = '#f59e0b';
+    if (t.status === 'Overdue') barColor = '#ef4444';
+
+    const parsedStart = parseYMD(t.start);
+    const parsedEnd = parseYMD(t.end);
+    const validStart = isNaN(parsedStart.getTime()) ? new Date() : parsedStart;
+    const validEnd = isNaN(parsedEnd.getTime()) ? new Date() : parsedEnd;
 
     return {
       id: t.id,
       name: `${t.name} (${t.executor})`,
-      start: new Date(t.start + 'T00:00:00'),
-      end: new Date(t.end + 'T23:59:59'),
+      start: validStart,
+      end: validEnd,
       type: 'task',
       progress,
-      dependencies: t.dependencies ?? [],
+      dependencies: Array.isArray(t.dependencies) ? t.dependencies : [],
       styles: {
         progressColor: barColor,
         progressSelectedColor: barColor,
-        backgroundColor: barBg,
-        backgroundSelectedColor: barBg,
+        backgroundColor: '#f3f4f6',
       },
     };
   });
 
-  const handleDateChange = async (updated: GanttTask) => {
-    const startStr = toYMD(updated.start);
-    const endStr = toYMD(updated.end);
+  const handleDateChange = async (updatedTask: GanttTask) => {
     try {
-      const updatedDB = await updateTaskDates(updated.id, startStr, endStr);
+      // Отправляем чистые YYYY-MM-DD, а не ISO с Z
+      const startYMD = toYMD(updatedTask.start);
+      const endYMD = toYMD(updatedTask.end);
+
+      const updatedDB = await updateTaskDates(updatedTask.id, startYMD, endYMD);
       onTasksUpdate(updatedDB);
-    } catch (e) {
-      console.error('Ошибка сохранения дат:', e);
+    } catch (error) {
+      console.error('Ошибка сохранения дат из диаграммы Ганта:', error);
     }
   };
 
@@ -67,23 +74,26 @@ function GanttChart({ tasks, onTasksUpdate, onTaskClick }: GanttChartProps) {
           Масштаб графика:
         </span>
         <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
-          {[
-            { mode: ViewMode.Day, label: 'День' },
-            { mode: ViewMode.Week, label: 'Неделя' },
-          ].map(({ mode, label }) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => setViewMode(mode)}
-              className={`cursor-pointer px-3 py-1 text-xs font-semibold rounded-md transition-all ${
-                viewMode === mode
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-500 hover:text-gray-900'
+          <button
+            type="button"
+            onClick={() => setViewMode(ViewMode.Day)}
+            className={`cursor-pointer px-3 py-1 text-xs font-semibold rounded-md transition-all ${viewMode === ViewMode.Day
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-gray-500 hover:text-gray-900'
               }`}
-            >
-              {label}
-            </button>
-          ))}
+          >
+            День
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode(ViewMode.Week)}
+            className={`cursor-pointer px-3 py-1 text-xs font-semibold rounded-md transition-all ${viewMode === ViewMode.Week
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-gray-500 hover:text-gray-900'
+              }`}
+          >
+            Неделя
+          </button>
         </div>
       </div>
 
@@ -93,20 +103,17 @@ function GanttChart({ tasks, onTasksUpdate, onTaskClick }: GanttChartProps) {
             tasks={formattedTasks}
             viewMode={viewMode}
             onDateChange={handleDateChange}
-            onClick={(task) => onTaskClick?.(task.id)}
             listCellWidth="220px"
             columnWidth={60}
             rowHeight={45}
             headerHeight={50}
             barCornerRadius={8}
             todayColor="rgba(59, 130, 246, 0.08)"
-            arrowColor="#94a3b8"
-            arrowIndent={20}
+            arrowColor="#cbd5e1"
+            locale="ru"
           />
         ) : (
-          <div className="text-center py-10 text-gray-400">
-            Нет операций для отображения
-          </div>
+          <div className="text-center py-10 text-gray-400">Нет операций для отображения</div>
         )}
       </div>
     </div>
