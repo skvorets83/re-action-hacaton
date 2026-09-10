@@ -5,11 +5,10 @@ services:
     image: postgres:15-alpine
     container_name: gantt_postgresql
     environment:
-      POSTGRES_USER: hacaton_user
       POSTGRES_PASSWORD: SecretPassword123
       POSTGRES_DB: gantt_project_db
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Компьютер будет стучаться на 5433, а внутри Docker база примет на 5432
     volumes:
       - pgdata:/var/lib/postgresql/data
 

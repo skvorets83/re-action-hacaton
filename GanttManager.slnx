@@ -3,6 +3,4 @@
     <File Path="docker-compose.yml" />
   </Folder>
   <Project Path="GanttManager.API/GanttManager.API.csproj" />
-  <Project Path="GanttManager.Business/GanttManager.Business.csproj" />
-  <Project Path="GanttManager.Data/GanttManager.Data.csproj" />
 </Solution>
