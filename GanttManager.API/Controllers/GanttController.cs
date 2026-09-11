@@ -30,21 +30,25 @@ namespace GanttManager.API.Controllers
             return await _context.Projects.Include(p => p.Tasks).ToListAsync();
         }
 
-        // 2. Создать новый проект (Всеядный эндпоинт)
-        [HttpPost("projects")]
-        public async Task<ActionResult<Project>> CreateProject([FromBody] System.Text.Json.JsonElement json)
+        // 2. Получить один конкретный проект по ID
+        [HttpGet("projects/{id}")]
+        public async Task<ActionResult<Project>> GetProjectById(Guid id)
         {
-            if (!json.TryGetProperty("name", out var nameProp))
-            {
-                return BadRequest(new { message = "Поле name является обязательным" });
-            }
+            var project = await _context.Projects.Include(p => p.Tasks).FirstOrDefaultAsync(p => p.Id == id);
+            if (project == null) return NotFound(new { message = "Проект не найден" });
+            return Ok(project);
+        }
 
+        // 3. Создать новый проект
+        [HttpPost("projects")]
+        public async Task<ActionResult<Project>> CreateProject([FromBody] Project projectDto)
+        {
             var newProject = new Project
             {
                 Id = Guid.NewGuid(),
-                Name = nameProp.GetString() ?? "Новый проект",
-                Description = json.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? "" : "",
-                OwnerId = json.TryGetProperty("ownerId", out var ownerProp) && Guid.TryParse(ownerProp.GetString(), out var oId) ? oId : Guid.Empty,
+                Name = string.IsNullOrEmpty(projectDto.Name) ? "Новый проект" : projectDto.Name,
+                Description = projectDto.Description ?? "",
+                OwnerId = projectDto.OwnerId,
                 CreatedAt = DateTime.UtcNow,
                 Tasks = new List<TaskItem>()
             };
@@ -54,11 +58,25 @@ namespace GanttManager.API.Controllers
             return Ok(newProject);
         }
 
+        // 4. Обновить имя или описание проекта
+        [HttpPut("projects/{id}")]
+        public async Task<IActionResult> UpdateProject(Guid id, [FromBody] Project projectDto)
+        {
+            var project = await _context.Projects.FindAsync(id);
+            if (project == null) return NotFound(new { message = "Проект не найден" });
+
+            project.Name = string.IsNullOrEmpty(projectDto.Name) ? project.Name : projectDto.Name;
+            project.Description = projectDto.Description ?? project.Description;
+
+            await _context.SaveChangesAsync();
+            return Ok(project);
+        }
+
         // ==========================================
-        // 📊 УПРАВЛЕНИЕ ЗАЗАЧАМИ
+        // 📊 УПРАВЛЕНИЕ ЗАДАЧАМИ (СДВИГИ, ИСПОЛНИТЕЛИ)
         // ==========================================
 
-        // 3. Получить все задачи конкретного проекта с их зависимостями
+        // 5. Получить все задачи проекта с их зависимостями
         [HttpGet("projects/{projectId}/tasks")]
         public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasks(Guid projectId)
         {
@@ -68,36 +86,28 @@ namespace GanttManager.API.Controllers
                 .ToListAsync();
         }
 
-        // 4. Создать новую задачу в проекте (Чинит баг создания проектов вместо задач)
+        // 6. Создать новую задачу (С привязкой выбранного исполнителя)
         [HttpPost("tasks")]
-        public async Task<ActionResult<TaskItem>> CreateTask([FromBody] System.Text.Json.JsonElement json)
+        public async Task<ActionResult<TaskItem>> CreateTask([FromBody] TaskItem taskDto)
         {
-            if (!json.TryGetProperty("projectId", out var projProp) || !Guid.TryParse(projProp.GetString(), out var projId))
-            {
-                return BadRequest(new { message = "Обязательное поле projectId отсутствует или имеет неверный формат GUID" });
-            }
+            var projectExists = await _context.Projects.AnyAsync(p => p.Id == taskDto.ProjectId);
+            if (!projectExists) return BadRequest(new { message = "Указанный проект не найден" });
 
-            // Проверяем, существует ли вообще такой проект в PostgreSQL
-            var projectExists = await _context.Projects.AnyAsync(p => p.Id == projId);
-            if (!projectExists)
+            if (taskDto.ExecutorId.HasValue && taskDto.ExecutorId != Guid.Empty)
             {
-                return BadRequest(new { message = $"Проект с ID {projId} не найден в базе данных" });
-            }
-
-            if (!json.TryGetProperty("startDate", out var startProp) || !json.TryGetProperty("endDate", out var endProp))
-            {
-                return BadRequest(new { message = "Поля startDate и endDate обязательны для создания задачи" });
+                var userExists = await _context.Users.AnyAsync(u => u.Id == taskDto.ExecutorId.Value);
+                if (!userExists) return BadRequest(new { message = "Указанный исполнитель не найден в базе данных" });
             }
 
             var newTask = new TaskItem
             {
-                Id = Guid.NewGuid(), // Всегда жестко генерируем НОВЫЙ ID на бэке, чтобы не было конфликтов
-                ProjectId = projId,
-                Name = json.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "Новая задача" : "Новая задача",
-                Status = json.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? "Todo" : "Todo",
-                StartDate = startProp.GetDateTime(),
-                EndDate = endProp.GetDateTime(),
-                ExecutorId = json.TryGetProperty("executorId", out var execProp) && Guid.TryParse(execProp.GetString(), out var eId) ? eId : null,
+                Id = Guid.NewGuid(),
+                ProjectId = taskDto.ProjectId,
+                Name = string.IsNullOrEmpty(taskDto.Name) ? "Новая задача" : taskDto.Name,
+                Status = string.IsNullOrEmpty(taskDto.Status) ? "Todo" : taskDto.Status,
+                StartDate = taskDto.StartDate,
+                EndDate = taskDto.EndDate,
+                ExecutorId = taskDto.ExecutorId == Guid.Empty ? null : taskDto.ExecutorId,
                 Dependencies = new List<TaskDependency>()
             };
 
@@ -106,9 +116,9 @@ namespace GanttManager.API.Controllers
             return Ok(newTask);
         }
 
-        // 5. ОБНОВЛЕНИЕ ЗАДАЧИ С КАСКАДНЫМ ПЕРЕСЧЕТОМ ДАТ ГАНТА
+        // 7. ОБНОВЛЕНИЕ ЗАДАЧИ С КАСКАДНЫМ ПЕРЕСЧЕТОМ ГАНТА И СМЕНОЙ ИСПОЛНИТЕЛЯ
         [HttpPut("tasks/{id}")]
-        public async Task<IActionResult> UpdateTask(Guid id, [FromBody] System.Text.Json.JsonElement json)
+        public async Task<IActionResult> UpdateTask(Guid id, [FromBody] TaskItem taskDto)
         {
             var task = await _context.Tasks
                 .Include(t => t.Dependencies)
@@ -116,31 +126,20 @@ namespace GanttManager.API.Controllers
 
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
-            if (!json.TryGetProperty("startDate", out var startProp) || !json.TryGetProperty("endDate", out var endProp))
-            {
-                return BadRequest(new { message = "Поля startDate и endDate обязательны для обновления" });
-            }
-
-            DateTime newStartDate = startProp.GetDateTime();
-            DateTime newEndDate = endProp.GetDateTime();
-
-            // Вычисляем сдвиг по дням для твоего алгоритма Ганта
-            int daysShift = (newStartDate - task.StartDate).Days;
+            int daysShift = (taskDto.StartDate - task.StartDate).Days;
 
             var validationService = new Services.TaskValidationService();
-            if (!validationService.ValidateDates(newStartDate, newEndDate, out string error))
+            if (!validationService.ValidateDates(taskDto.StartDate, taskDto.EndDate, out string error))
             {
                 return BadRequest(new { message = error });
             }
 
-            if (json.TryGetProperty("name", out var nameProp)) task.Name = nameProp.GetString() ?? task.Name;
-            if (json.TryGetProperty("status", out var statusProp)) task.Status = statusProp.GetString() ?? task.Status;
-            if (json.TryGetProperty("executorId", out var execProp)) task.ExecutorId = Guid.TryParse(execProp.GetString(), out var eId) ? eId : null;
+            task.Name = taskDto.Name;
+            task.Status = taskDto.Status;
+            task.StartDate = taskDto.StartDate;
+            task.EndDate = taskDto.EndDate;
+            task.ExecutorId = taskDto.ExecutorId == Guid.Empty ? null : taskDto.ExecutorId;
 
-            task.StartDate = newStartDate;
-            task.EndDate = newEndDate;
-
-            // Если ползунок сдвинули — запускаем твой каскадный BFS алгоритм
             if (daysShift != 0)
             {
                 var ganttEngine = new Services.GanttEngine();
@@ -151,7 +150,7 @@ namespace GanttManager.API.Controllers
             return Ok(task);
         }
 
-        // 6. УДАЛЕНИЕ ЗАДАЧИ И ВСЕХ ЕЁ СВЯЗЕЙ
+        // 8. Удалить задачу и её зависимости
         [HttpDelete("tasks/{id}")]
         public async Task<IActionResult> DeleteTask(Guid id)
         {
@@ -162,18 +161,48 @@ namespace GanttManager.API.Controllers
             await _context.SaveChangesAsync();
             return NoContent();
         }
-        [HttpGet("users")]
-        public async Task<ActionResult<IEnumerable<object>>> GetUsers()
-        {
-            // Загружаем пользователей из PostgreSQL
-            var users = await _context.Users.ToListAsync();
 
-            int counter = 1;
+        // ==========================================
+        // 🔗 УПРАВЛЕНИЕ ЗАВИСИМОСТЯМИ (СТРЕЛОЧКИ ГАНТА)
+        // ==========================================
+
+        // 9. Создать связь между двумя задачами (Построить стрелочку)
+        [HttpPost("tasks/{id}/dependencies")]
+        public async Task<IActionResult> AddDependency(Guid id, [FromBody] TaskDependency dependencyDto)
+        {
+            var parentExists = await _context.Tasks.AnyAsync(t => t.Id == dependencyDto.ParentTaskId);
+            var childExists = await _context.Tasks.AnyAsync(t => t.Id == id);
+
+            if (!parentExists || !childExists) return NotFound(new { message = "Одна из указанных задач не найдена" });
+
+            var dependencyExists = await _context.TaskDependencies.AnyAsync(td => td.ParentTaskId == dependencyDto.ParentTaskId && td.ChildTaskId == id);
+            if (dependencyExists) return BadRequest(new { message = "Такая связь уже существует" });
+
+            var dependency = new TaskDependency
+            {
+                ParentTaskId = dependencyDto.ParentTaskId,
+                ChildTaskId = id
+            };
+
+            _context.TaskDependencies.Add(dependency);
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "Связь успешно добавлена" });
+        }
+
+        // ==========================================
+        // 👤 УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ (ИСПОЛНИТЕЛИ)
+        // ==========================================
+
+        // 10. Получить список всех пользователей (Четкий контракт для фронтенда)
+        [HttpGet("users")]
+        public async Task<IActionResult> GetUsers()
+        {
+            var users = await _context.Users.ToListAsync();
             var result = new List<object>();
+            int counter = 1;
 
             foreach (var u in users)
             {
-                // С помощью рефлексии безопасно ищем ХОТЬ КАКОЕ-ТО текстовое поле в модели Матвея
                 string detectedName = u.GetType().GetProperties()
                     .Where(p => p.PropertyType == typeof(string) && p.Name != "PasswordHash" && p.Name != "Role")
                     .Select(p => p.GetValue(u)?.ToString())
@@ -189,58 +218,5 @@ namespace GanttManager.API.Controllers
 
             return Ok(result);
         }
-        // 9. ПОЛУЧИТЬ ОДИН ПРОЕКТ ПО ID
-        [HttpGet("projects/{id}")]
-        public async Task<ActionResult<Project>> GetProjectById(Guid id)
-        {
-            var project = await _context.Projects.Include(p => p.Tasks).FirstOrDefaultAsync(p => p.Id == id);
-            if (project == null) return NotFound(new { message = "Проект не найден" });
-            return Ok(project);
-        }
-
-        // 10. ОБНОВИТЬ ИМЯ/ОПИСАНИЕ ПРОЕКТА
-        [HttpPut("projects/{id}")]
-        public async Task<IActionResult> UpdateProject(Guid id, [FromBody] System.Text.Json.JsonElement json)
-        {
-            var project = await _context.Projects.FindAsync(id);
-            if (project == null) return NotFound(new { message = "Проект не найден" });
-
-            if (json.TryGetProperty("name", out var nameProp)) project.Name = nameProp.GetString() ?? project.Name;
-            if (json.TryGetProperty("description", out var descProp)) project.Description = descProp.GetString() ?? project.Description;
-
-            await _context.SaveChangesAsync();
-            return Ok(project);
-        }
-
-        // 11. СОЗДАТЬ СВЯЗЬ МЕЖДУ ЗАДАЧАМИ (ПОСТРОИТЬ СТРЕЛОЧКУ)
-        [HttpPost("tasks/{id}/dependencies")]
-        public async Task<IActionResult> AddDependency(Guid id, [FromBody] System.Text.Json.JsonElement json)
-        {
-            if (!json.TryGetProperty("parentTaskId", out var parentProp) || !Guid.TryParse(parentProp.GetString(), out var parentId))
-            {
-                return BadRequest(new { message = "Необходимо передать корректный parentTaskId" });
-            }
-
-            // Проверяем, существуют ли обе задачи в базе
-            var parentExists = await _context.Tasks.AnyAsync(t => t.Id == parentId);
-            var childExists = await _context.Tasks.AnyAsync(t => t.Id == id);
-
-            if (!parentExists || !childExists) return NotFound(new { message = "Одна из задач не найдена в базе" });
-
-            // Проверяем, нет ли уже такой связи, чтобы не поймать дубликат ключа в Postgres
-            var dependencyExists = await _context.TaskDependencies.AnyAsync(td => td.ParentTaskId == parentId && td.ChildTaskId == id);
-            if (dependencyExists) return BadRequest(new { message = "Такая связь уже существует" });
-
-            var dependency = new TaskDependency
-            {
-                ParentTaskId = parentId,
-                ChildTaskId = id
-            };
-
-            _context.TaskDependencies.Add(dependency);
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Связь успешно добавлена" });
-        }
-
     }
 }
