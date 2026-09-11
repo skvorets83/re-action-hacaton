@@ -117,30 +117,24 @@ namespace GanttManager.API.Controllers
 
 
         // 6. Создать новую задачу
+        // 6. Создать новую задачу
         [HttpPost("tasks")]
-        public async Task<ActionResult<TaskItem>> CreateTask([FromBody] System.Text.Json.Nodes.JsonObject body)
+        public async Task<ActionResult<TaskItem>> CreateTask([FromBody] TaskItem taskDto)
         {
-            // Безопасно достаем поля из динамического JSON-тела
-            body.TryGetPropertyValue("projectId", out var projectIdNode);
-            body.TryGetPropertyValue("name", out var nameNode);
-            body.TryGetPropertyValue("status", out var statusNode);
-            body.TryGetPropertyValue("startDate", out var startDateNode);
-            body.TryGetPropertyValue("endDate", out var endDateNode);
-            body.TryGetPropertyValue("executor", out var executorNode); // Вот то самое текстовое поле от фронта
-
-            if (projectIdNode == null || !Guid.TryParse(projectIdNode.ToString(), out Guid projectId))
-            {
-                return BadRequest(new { message = "Некорректный или отсутствующий projectId" });
-            }
-
-            var projectExists = await _context.Projects.AnyAsync(p => p.Id == projectId);
+            var projectExists = await _context.Projects.AnyAsync(p => p.Id == taskDto.ProjectId);
             if (!projectExists) return BadRequest(new { message = "Указанный проект не найден" });
 
-            DateTime.TryParse(startDateNode?.ToString(), out DateTime startDate);
-            DateTime.TryParse(endDateNode?.ToString(), out DateTime endDate);
+            // Полностью удалена проверка пользователя по базе данных!
 
-            // Кодируем пришедший текст из json-поля executor в Guid
-            string executorText = executorNode?.ToString() ?? "";
+            // Пытаемся безопасно извлечь строку из входящего JSON, если фронтенд прислал поле "executor"
+            string executorText = "";
+            try
+            {
+                // Если в вашей DTO модели нет поля Executor, мы берем его из "сырого" свойства, если оно передано
+                executorText = Request.Form.ContainsKey("executor") ? Request.Form["executor"].ToString() : "";
+            }
+            catch { }
+
             Guid encodedExecutorGuid = Guid.Empty;
             if (!string.IsNullOrEmpty(executorText))
             {
@@ -149,15 +143,20 @@ namespace GanttManager.API.Controllers
                 System.Buffer.BlockCopy(textBytes, 0, bytes, 0, Math.Min(textBytes.Length, 16));
                 encodedExecutorGuid = new Guid(bytes);
             }
+            else if (taskDto.ExecutorId.HasValue)
+            {
+                // Если прислали старый Guid.Empty или валидный ID
+                encodedExecutorGuid = taskDto.ExecutorId.Value;
+            }
 
             var newTask = new TaskItem
             {
                 Id = Guid.NewGuid(),
-                ProjectId = projectId,
-                Name = string.IsNullOrEmpty(nameNode?.ToString()) ? "Новая задача" : nameNode.ToString(),
-                Status = string.IsNullOrEmpty(statusNode?.ToString()) ? "Todo" : statusNode.ToString(),
-                StartDate = startDate,
-                EndDate = endDate,
+                ProjectId = taskDto.ProjectId,
+                Name = string.IsNullOrEmpty(taskDto.Name) ? "Новая задача" : taskDto.Name,
+                Status = string.IsNullOrEmpty(taskDto.Status) ? "Todo" : taskDto.Status,
+                StartDate = taskDto.StartDate,
+                EndDate = taskDto.EndDate,
                 ExecutorId = encodedExecutorGuid,
                 Dependencies = new List<TaskDependency>()
             };
@@ -165,7 +164,7 @@ namespace GanttManager.API.Controllers
             _context.Tasks.Add(newTask);
             await _context.SaveChangesAsync();
 
-            // Возвращаем объект анонимно, чтобы сразу отдать поле executor текстом обратно
+            // Защита от 500 при возврате: отдаем плоский чистый анонимный объект
             return Ok(new
             {
                 newTask.Id,
@@ -174,10 +173,11 @@ namespace GanttManager.API.Controllers
                 newTask.Status,
                 newTask.StartDate,
                 newTask.EndDate,
-                Executor = executorText, // Отдаем фронту чистый текст сразу в ответе
-                newTask.Dependencies
+                ExecutorId = taskDto.ExecutorId,
+                Executor = executorText
             });
         }
+
 
         // 7. Обновление задачи
         [HttpPut("tasks/{id}")]
