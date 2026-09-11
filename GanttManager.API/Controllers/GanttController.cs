@@ -78,13 +78,37 @@ namespace GanttManager.API.Controllers
 
         // 5. Получить все задачи проекта с их зависимостями
         [HttpGet("projects/{projectId}/tasks")]
-        public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasks(Guid projectId)
+        public async Task<ActionResult<IEnumerable<object>>> GetTasks(Guid projectId)
         {
-            return await _context.Tasks
+            var tasks = await _context.Tasks
                 .Where(t => t.ProjectId == projectId)
                 .Include(t => t.Dependencies)
                 .ToListAsync();
+
+            // Полностью убрали d.Id, чтобы избежать ошибок компиляции моделей
+            var result = tasks.Select(t => new
+            {
+                t.Id,
+                t.ProjectId,
+                t.Name,
+                t.Status,
+                t.StartDate,
+                t.EndDate,
+                ExecutorId = (t.ExecutorId == null || t.ExecutorId == Guid.Empty)
+                    ? ""
+                    : System.Text.Encoding.UTF8.GetString(t.ExecutorId.Value.ToByteArray()).TrimEnd('\0', ' '),
+                Dependencies = t.Dependencies.Select(d => new
+                {
+                    d.ParentTaskId,
+                    d.ChildTaskId
+                }).ToList()
+            });
+
+            return Ok(result);
         }
+
+
+
 
         // 6. Создать новую задачу (С привязкой выбранного исполнителя)
         [HttpPost("tasks")]
