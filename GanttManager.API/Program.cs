@@ -28,7 +28,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // --------------------------------------------
 
 // --- НАСТРОЙКА JWT АУТЕНТИФИКАЦИИ ---
-System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
+
 var fixedSecretKey = "SuperSecretKeyGanttManager2026ProtectedAndLongEnough!";
 var fixedIssuer = "GanttManagerAPI";
 var fixedAudience = "GanttManagerClient";

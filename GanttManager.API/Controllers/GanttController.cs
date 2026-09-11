@@ -25,7 +25,9 @@ namespace GanttManager.API.Controllers
         [HttpGet("projects")]
         public async Task<ActionResult<IEnumerable<Project>>> GetProjects()
         {
-            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userIdString = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                 ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
+
             if (!Guid.TryParse(userIdString, out var currentUserId))
             {
                 return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
