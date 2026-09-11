@@ -17,6 +17,7 @@ import {
   getOverdueTasks,
   fetchProjectExport,
   downloadJson,
+  downloadCsv,
 } from './api/tasksApi';
 import type { Task, TaskStatus, Project } from './api/tasksApi';
 
@@ -320,6 +321,34 @@ export default function Dashboard() {
       alert('Не удалось экспортировать проект');
     }
   };
+  const handleExportCsv = () => {
+    if (!activeProject) return;
+
+    // Заголовки CSV
+    const rows: string[][] = [
+      ['Задача', 'Исполнитель', 'Статус', 'Начало', 'Конец', 'Зависит от'],
+    ];
+
+    // Строки — по одной на задачу
+    for (const t of currentProjectTasks) {
+      const depNames = t.dependencies
+        .map((id) => currentProjectTasks.find((x) => x.id === id)?.name ?? '')
+        .filter(Boolean)
+        .join('; ');   // в CSV зависимости через ; внутри одной ячейки
+
+      rows.push([
+        t.name,
+        t.executor || '',
+        statusLabel[t.status],
+        t.start,
+        t.end,
+        depNames,
+      ]);
+    }
+
+    const filename = `${activeProject.name.replace(/\s+/g, '-')}-${Date.now()}.csv`;
+    downloadCsv(rows, filename);
+  };
 
   // ---------- Стили ----------
   const statusStyles: Record<TaskStatus, string> = {
@@ -415,7 +444,17 @@ export default function Dashboard() {
               💾 Экспорт
             </button>
           )}
+          {activeProject && (
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 text-xs font-bold py-2 px-3 rounded-lg transition"
+            >
+              📊 CSV
+            </button>
+          )}
         </div>
+
         {activeProject && (
           <div className="text-xs font-medium text-gray-500">
             Дедлайн:{' '}
