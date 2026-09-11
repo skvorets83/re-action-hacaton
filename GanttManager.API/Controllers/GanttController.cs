@@ -324,7 +324,7 @@ namespace GanttManager.API.Controllers
 
             return Ok(result);
         }
-        // 10. Получить комментарии к задаче
+        // Получить комментарии к задаче
         [HttpGet("tasks/{taskId}/comments")]
         public ActionResult GetComments(Guid taskId)
         {
@@ -368,6 +368,58 @@ namespace GanttManager.API.Controllers
             _mockComments.Remove(comment);
             return Ok(new { message = "Комментарий успешно удален" });
         }
+        // 13. Удалить проект с каскадным удалением всех связанных данных
+        [HttpDelete("projects/{id}")]
+        public async Task<ActionResult> DeleteProject(Guid id)
+        {
+            // 1. Проверяем существование проекта
+            var project = await _context.Projects.FirstOrDefaultAsync(p => p.Id == id);
+            if (project == null)
+            {
+                return NotFound(new { message = "Проект не найден" });
+            }
+
+            // 2. Находим все задачи, принадлежащие этому проекту
+            var projectTaskIds = await _context.Tasks
+                .Where(t => t.ProjectId == id)
+                .Select(t => t.Id)
+                .ToListAsync();
+
+            if (projectTaskIds.Any())
+            {
+                // 3. Удаляем все зависимости (связи) этих задач
+                var dependenciesToDelete = await _context.TaskDependencies
+                    .Where(td => projectTaskIds.Contains(td.ParentTaskId) || projectTaskIds.Contains(td.ChildTaskId))
+                    .ToListAsync();
+
+                if (dependenciesToDelete.Any())
+                {
+                    _context.TaskDependencies.RemoveRange(dependenciesToDelete);
+                }
+
+                // 4. Очищаем mock-комментарии из оперативной памяти для этих задач
+                lock (_mockComments)
+                {
+                    _mockComments.RemoveAll(c => projectTaskIds.Contains(c.TaskId));
+                }
+
+                // 5. Удаляем сами задачи проекта
+                var tasksToDelete = await _context.Tasks
+                    .Where(t => t.ProjectId == id)
+                    .ToListAsync();
+
+                _context.Tasks.RemoveRange(tasksToDelete);
+            }
+
+            // 6. Удаляем сам проект
+            _context.Projects.Remove(project);
+
+            // Сохраняем все изменения в БД одной транзакцией
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Проект удалён" });
+        }
+
 
     }
 }
