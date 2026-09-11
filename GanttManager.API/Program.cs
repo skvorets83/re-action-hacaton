@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- НАСТРОЙКА ПОДКЛЮЧЕНИЯ К БАЗЕ ДАННЫХ ---
+
 var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (string.IsNullOrEmpty(connectionString))
 {
@@ -50,7 +50,6 @@ app.UseSwaggerUI();
 app.UseRouting();
 app.UseCors("AllowAll");
 
-// УДАЛЕНО: Встроенная аутентификация полностью отключена, конвейер чист!
 
 app.MapControllers();
 
