@@ -85,27 +85,33 @@ namespace GanttManager.API.Controllers
                 .Include(t => t.Dependencies)
                 .ToListAsync();
 
-            // Полностью убрали d.Id, чтобы избежать ошибок компиляции моделей
-            var result = tasks.Select(t => new
-            {
-                t.Id,
-                t.ProjectId,
-                t.Name,
-                t.Status,
-                t.StartDate,
-                t.EndDate,
-                ExecutorId = (t.ExecutorId == null || t.ExecutorId == Guid.Empty)
+            var result = tasks.Select(t => {
+                // Выносим раскодирование строки исполнителя в отдельную переменную
+                var executorName = (t.ExecutorId == null || t.ExecutorId == Guid.Empty)
                     ? ""
-                    : System.Text.Encoding.UTF8.GetString(t.ExecutorId.Value.ToByteArray()).TrimEnd('\0', ' '),
-                Dependencies = t.Dependencies.Select(d => new
+                    : System.Text.Encoding.UTF8.GetString(t.ExecutorId.Value.ToByteArray()).TrimEnd('\0', ' ');
+
+                return new
                 {
-                    d.ParentTaskId,
-                    d.ChildTaskId
-                }).ToList()
+                    t.Id,
+                    t.ProjectId,
+                    t.Name,
+                    t.Status,
+                    t.StartDate,
+                    t.EndDate,
+                    ExecutorId = executorName, // Оставляем для обратной совместимости
+                    Executor = executorName,   // ДОБАВИЛИ: Чистый текст, который просит фронтенд
+                    Dependencies = t.Dependencies.Select(d => new
+                    {
+                        d.ParentTaskId,
+                        d.ChildTaskId
+                    }).ToList()
+                };
             });
 
             return Ok(result);
         }
+
 
 
 
