@@ -12,6 +12,16 @@ namespace GanttManager.API.Controllers
     [Route("api/[controller]")]
     public class GanttController : ControllerBase
     {
+        private static readonly List<MockComment> _mockComments = new List<MockComment>();
+
+        private class MockComment
+        {
+            public Guid Id { get; set; }
+            public Guid TaskId { get; set; }
+            public string Author { get; set; }
+            public string Text { get; set; }
+            public DateTime CreatedAt { get; set; }
+        }
         private readonly AppDbContext _context;
 
         public GanttController(AppDbContext context)
@@ -113,10 +123,6 @@ namespace GanttManager.API.Controllers
         }
 
 
-
-
-
-        // 6. Создать новую задачу
         // 6. Создать новую задачу
         [HttpPost("tasks")]
         public async Task<ActionResult<TaskItem>> CreateTask([FromBody] TaskItem taskDto)
@@ -318,5 +324,50 @@ namespace GanttManager.API.Controllers
 
             return Ok(result);
         }
+        // 10. Получить комментарии к задаче
+        [HttpGet("tasks/{taskId}/comments")]
+        public ActionResult GetComments(Guid taskId)
+        {
+            var comments = _mockComments
+                .Where(c => c.TaskId == taskId)
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new { c.Id, c.TaskId, c.Author, c.Text });
+
+            return Ok(comments);
+        }
+
+        // 11. Добавить комментарий к задаче
+        [HttpPost("tasks/{taskId}/comments")]
+        public ActionResult AddComment(Guid taskId, [FromBody] System.Text.Json.Nodes.JsonObject body)
+        {
+            if (body == null || !body.TryGetPropertyValue("text", out var textNode) || !body.TryGetPropertyValue("author", out var authorNode))
+            {
+                return BadRequest(new { message = "Поля author и text обязательны" });
+            }
+
+            var newComment = new MockComment
+            {
+                Id = Guid.NewGuid(),
+                TaskId = taskId,
+                Author = authorNode?.ToString() ?? "Аноним",
+                Text = textNode?.ToString() ?? "",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _mockComments.Add(newComment);
+            return Ok(new { newComment.Id, newComment.TaskId, newComment.Author, newComment.Text });
+        }
+
+        // 12. Удалить комментарий
+        [HttpDelete("comments/{id}")]
+        public ActionResult DeleteComment(Guid id)
+        {
+            var comment = _mockComments.FirstOrDefault(c => c.Id == id);
+            if (comment == null) return NotFound(new { message = "Комментарий не найден" });
+
+            _mockComments.Remove(comment);
+            return Ok(new { message = "Комментарий успешно удален" });
+        }
+
     }
 }
