@@ -1,77 +1,105 @@
-﻿using GanttManager.API;
+﻿using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using GanttManager.API.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
+using Microsoft.IdentityModel.Tokens;
 
-namespace GanttManager.Controllers
+namespace GanttManager.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IConfiguration _configuration;
 
-        public AuthController(AppDbContext context)
+        public AuthController(AppDbContext context, IConfiguration configuration)
         {
             _context = context;
+            _configuration = configuration;
         }
 
         [HttpPost("register")]
-        public async Task<IActionResult> Register([FromBody] AuthRequest model)
+        public async Task<IActionResult> Register([FromBody] RegisterDto dto)
         {
-            if (await _context.Users.AnyAsync(u => u.Email == model.Email))
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            var userExists = await _context.Users.AnyAsync(u => u.Email.ToLower() == dto.Email.ToLower());
+            if (userExists)
             {
-                return BadRequest(new { message = "Пользователь с таким Email уже существует" });
+                return BadRequest(new { message = "Пользователь с таким Email уже зарегистрирован." });
             }
 
-            var user = new User
+            string passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+
+            var newUser = new User
             {
-                Email = model.Email,
-                PasswordHash = HashPassword(model.Password),
+                Email = dto.Email,
+                PasswordHash = passwordHash,
                 Role = "User"
             };
 
-            _context.Users.Add(user);
+            _context.Users.Add(newUser);
             await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Регистрация успешна" });
+            return Ok(new { message = "Регистрация успешна!" });
         }
 
         [HttpPost("login")]
-        public async Task<IActionResult> Login([FromBody] AuthRequest model)
+        public async Task<IActionResult> Login([FromBody] LoginDto dto)
         {
-            var hashedPassword = HashPassword(model.Password);
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email && u.PasswordHash == hashedPassword);
+            if (!ModelState.IsValid) return BadRequest(ModelState);
 
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == dto.Email.ToLower());
             if (user == null)
             {
-                return Unauthorized(new { message = "Неверный Email или пароль" });
+                return Unauthorized(new { message = "Неверный Email или пароль." });
             }
 
-            var token = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{user.Id}:{user.Role}:{DateTime.UtcNow.AddHours(2)}"));
-
-            return Ok(new
+            bool isPasswordValid = BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash);
+            if (!isPasswordValid)
             {
-                token = token,
-                userId = user.Id,
-                role = user.Role
-            });
+                return Unauthorized(new { message = "Неверный Email или пароль." });
+            }
+
+            var token = GenerateJwtToken(user);
+
+            var response = new AuthResponseDto
+            {
+                Token = token,
+                UserId = user.Id,
+                Email = user.Email,
+                Role = user.Role
+            };
+
+            return Ok(response);
         }
 
-        private string HashPassword(string password)
+        private string GenerateJwtToken(User user)
         {
-            using var sha256 = SHA256.Create();
-            var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-            return Convert.ToBase64String(bytes);
-        }
-    }
+            var jwtSettings = _configuration.GetSection("JwtSettings");
+            var secretKey = jwtSettings["SecretKey"]!;
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-    public class AuthRequest
-    {
-        public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim(ClaimTypes.Email, user.Email),
+                new Claim(ClaimTypes.Role, user.Role)
+            };
+
+            var token = new JwtSecurityToken(
+                issuer: jwtSettings["Issuer"],
+                audience: jwtSettings["Audience"],
+                claims: claims,
+                expires: DateTime.UtcNow.AddMinutes(double.Parse(jwtSettings["ExpiryInMinutes"] ?? "1440")),
+                signingCredentials: creds
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
     }
 }

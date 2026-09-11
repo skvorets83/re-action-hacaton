@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using GanttManager.API; // Подключаем базу данных Матвея
+using GanttManager.API; // Подключаем базу данных
 
 namespace GanttManager.Services;
 
@@ -16,10 +16,11 @@ public class GanttEngine
     {
         if (daysShift == 0) return;
 
-        // 1. Вытягиваем абсолютно все задачи проекта и их зависимости из базы в оперативную память
+        // 1. Вытягиваем абсолютно все задачи проекта и их раздельные зависимости из базы в оперативную память
         var allTasks = await context.Tasks
             .Where(t => t.ProjectId == projectId)
-            .Include(t => t.Dependencies)
+            .Include(t => t.ParentDependencies)
+            .Include(t => t.ChildDependencies)
             .ToListAsync();
 
         // 2. Инициализируем очередь для обхода графа зависимостей (BFS)
@@ -48,11 +49,10 @@ public class GanttEngine
                 currentTask.StartDate = currentTask.StartDate.AddDays(daysShift);
                 currentTask.EndDate = currentTask.EndDate.AddDays(daysShift);
 
-                // Ищем задачи, которые зависят уже от текущей сдвинутой задачи, и добавляем в очередь
-                var nextDependents = await context.TaskDependencies
-                    .Where(td => td.ParentTaskId == currentId)
+                // Ищем задачи, которые зависят уже от текущей сдвинутой задачи через ChildDependencies, и добавляем в очередь
+                var nextDependents = currentTask.ChildDependencies
                     .Select(td => td.ChildTaskId)
-                    .ToListAsync();
+                    .ToList();
 
                 foreach (var id in nextDependents)
                 {

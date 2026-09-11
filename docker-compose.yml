@@ -10,7 +10,7 @@ services:
     restart: always  # Автоматически перезапускать базу при сбое сервера
     environment:
       POSTGRES_USER: gantt_prod_admin
-      POSTGRES_PASSWORD: Garlick11.06.  # Поменяйте на свой секретный пароль
+      POSTGRES_PASSWORD: Garlick11.06.  
       POSTGRES_DB: gantt_production_db
     # На сервере закрываем порт 5432 наружу! Доступ к БД будет ТОЛЬКО у C# внутри докер-сети
     expose:

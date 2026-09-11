@@ -44,6 +44,8 @@ namespace GanttManager.API.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("OwnerId");
+
                     b.ToTable("Projects");
                 });
 
@@ -90,6 +92,8 @@ namespace GanttManager.API.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ExecutorId");
+
                     b.HasIndex("ProjectId");
 
                     b.ToTable("Tasks");
@@ -118,19 +122,33 @@ namespace GanttManager.API.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Email")
+                        .IsUnique();
+
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("GanttManager.API.Project", b =>
+                {
+                    b.HasOne("GanttManager.API.User", "Owner")
+                        .WithMany("Projects")
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
                 });
 
             modelBuilder.Entity("GanttManager.API.TaskDependency", b =>
                 {
                     b.HasOne("GanttManager.API.TaskItem", "ChildTask")
-                        .WithMany("Dependencies")
+                        .WithMany("ParentDependencies")
                         .HasForeignKey("ChildTaskId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("GanttManager.API.TaskItem", "ParentTask")
-                        .WithMany()
+                        .WithMany("ChildDependencies")
                         .HasForeignKey("ParentTaskId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -142,11 +160,20 @@ namespace GanttManager.API.Migrations
 
             modelBuilder.Entity("GanttManager.API.TaskItem", b =>
                 {
-                    b.HasOne("GanttManager.API.Project", null)
+                    b.HasOne("GanttManager.API.User", "Executor")
+                        .WithMany("AssignedTasks")
+                        .HasForeignKey("ExecutorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GanttManager.API.Project", "Project")
                         .WithMany("Tasks")
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Executor");
+
+                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("GanttManager.API.Project", b =>
@@ -156,7 +183,16 @@ namespace GanttManager.API.Migrations
 
             modelBuilder.Entity("GanttManager.API.TaskItem", b =>
                 {
-                    b.Navigation("Dependencies");
+                    b.Navigation("ChildDependencies");
+
+                    b.Navigation("ParentDependencies");
+                });
+
+            modelBuilder.Entity("GanttManager.API.User", b =>
+                {
+                    b.Navigation("AssignedTasks");
+
+                    b.Navigation("Projects");
                 });
 #pragma warning restore 612, 618
         }

@@ -6,26 +6,11 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace GanttManager.API.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class InitialAuthMigration : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.CreateTable(
-                name: "Projects",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Name = table.Column<string>(type: "text", nullable: false),
-                    Description = table.Column<string>(type: "text", nullable: false),
-                    OwnerId = table.Column<Guid>(type: "uuid", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Projects", x => x.Id);
-                });
-
             migrationBuilder.CreateTable(
                 name: "Users",
                 columns: table => new
@@ -39,6 +24,27 @@ namespace GanttManager.API.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Users", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Projects",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    Name = table.Column<string>(type: "text", nullable: false),
+                    Description = table.Column<string>(type: "text", nullable: false),
+                    OwnerId = table.Column<Guid>(type: "uuid", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Projects", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Projects_Users_OwnerId",
+                        column: x => x.OwnerId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -62,6 +68,12 @@ namespace GanttManager.API.Migrations
                         principalTable: "Projects",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_Tasks_Users_ExecutorId",
+                        column: x => x.ExecutorId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
                 });
 
             migrationBuilder.CreateTable(
@@ -89,14 +101,30 @@ namespace GanttManager.API.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_Projects_OwnerId",
+                table: "Projects",
+                column: "OwnerId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_TaskDependencies_ChildTaskId",
                 table: "TaskDependencies",
                 column: "ChildTaskId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Tasks_ExecutorId",
+                table: "Tasks",
+                column: "ExecutorId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Tasks_ProjectId",
                 table: "Tasks",
                 column: "ProjectId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_Email",
+                table: "Users",
+                column: "Email",
+                unique: true);
         }
 
         /// <inheritdoc />
@@ -106,13 +134,13 @@ namespace GanttManager.API.Migrations
                 name: "TaskDependencies");
 
             migrationBuilder.DropTable(
-                name: "Users");
-
-            migrationBuilder.DropTable(
                 name: "Tasks");
 
             migrationBuilder.DropTable(
                 name: "Projects");
+
+            migrationBuilder.DropTable(
+                name: "Users");
         }
     }
 }

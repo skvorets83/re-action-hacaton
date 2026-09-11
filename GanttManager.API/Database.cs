@@ -4,16 +4,16 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GanttManager.API
 {
-    // ==========================================
-    // 📊 МОДЕЛИ ТАБЛИЦ БАЗЫ ДАННЫХ
-    // ==========================================
     public class User
     {
         public Guid Id { get; set; } = Guid.NewGuid();
         public string Email { get; set; } = string.Empty;
         public string PasswordHash { get; set; } = string.Empty;
-        public string Role { get; set; } = "User"; // User, Admin
+        public string Role { get; set; } = "User";
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public List<Project> Projects { get; set; } = new();
+        public List<TaskItem> AssignedTasks { get; set; } = new();
     }
 
     public class Project
@@ -21,7 +21,10 @@ namespace GanttManager.API
         public Guid Id { get; set; } = Guid.NewGuid();
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
+
         public Guid OwnerId { get; set; }
+        public User Owner { get; set; } = null!;
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public List<TaskItem> Tasks { get; set; } = new();
     }
@@ -30,25 +33,29 @@ namespace GanttManager.API
     {
         public Guid Id { get; set; } = Guid.NewGuid();
         public Guid ProjectId { get; set; }
+        public Project Project { get; set; } = null!;
+
         public string Name { get; set; } = string.Empty;
-        public string Status { get; set; } = "Todo"; // Todo, InProgress, Done, Overdue
+        public string Status { get; set; } = "Todo";
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
+
         public Guid? ExecutorId { get; set; }
-        public List<TaskDependency> Dependencies { get; set; } = new();
+        public User? Executor { get; set; }
+
+        public List<TaskDependency> ParentDependencies { get; set; } = new();
+        public List<TaskDependency> ChildDependencies { get; set; } = new();
     }
 
     public class TaskDependency
     {
         public Guid ParentTaskId { get; set; }
         public TaskItem ParentTask { get; set; } = null!;
+
         public Guid ChildTaskId { get; set; }
         public TaskItem ChildTask { get; set; } = null!;
     }
 
-    // ==========================================
-    // 🛠️ КОНТЕКСТ ПОДКЛЮЧЕНИЯ К POSTGRESQL
-    // ==========================================
     public class AppDbContext : DbContext
     {
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
@@ -62,18 +69,40 @@ namespace GanttManager.API
         {
             base.OnModelCreating(modelBuilder);
 
+            modelBuilder.Entity<User>()
+                .HasIndex(u => u.Email)
+                .IsUnique();
+
+            modelBuilder.Entity<Project>()
+                .HasOne(p => p.Owner)
+                .WithMany(u => u.Projects)
+                .HasForeignKey(p => p.OwnerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<TaskItem>()
+                .HasOne(t => t.Executor)
+                .WithMany(u => u.AssignedTasks)
+                .HasForeignKey(t => t.ExecutorId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<TaskItem>()
+                .HasOne(t => t.Project)
+                .WithMany(p => p.Tasks)
+                .HasForeignKey(t => t.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             modelBuilder.Entity<TaskDependency>()
                 .HasKey(td => new { td.ParentTaskId, td.ChildTaskId });
 
             modelBuilder.Entity<TaskDependency>()
                 .HasOne(td => td.ParentTask)
-                .WithMany()
+                .WithMany(t => t.ChildDependencies)
                 .HasForeignKey(td => td.ParentTaskId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<TaskDependency>()
                 .HasOne(td => td.ChildTask)
-                .WithMany(t => t.Dependencies)
+                .WithMany(t => t.ParentDependencies)
                 .HasForeignKey(td => td.ChildTaskId)
                 .OnDelete(DeleteBehavior.Cascade);
         }

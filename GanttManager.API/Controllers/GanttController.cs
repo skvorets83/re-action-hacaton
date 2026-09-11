@@ -55,20 +55,20 @@ namespace GanttManager.API.Controllers
         }
 
         // ==========================================
-        // 📊 УПРАВЛЕНИЕ ЗАЗАЧАМИ
+        // 📊 УПРАВЛЕНИЕ ЗАДАЧАМИ
         // ==========================================
 
-        // 3. Получить все задачи конкретного проекта с их зависимостями
+        // 3. Получить все задачи конкретного проекта с их родительскими зависимостями
         [HttpGet("projects/{projectId}/tasks")]
         public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasks(Guid projectId)
         {
             return await _context.Tasks
                 .Where(t => t.ProjectId == projectId)
-                .Include(t => t.Dependencies)
+                .Include(t => t.ParentDependencies) // Подгружаем задачи, от которых зависит текущая
                 .ToListAsync();
         }
 
-        // 4. Создать новую задачу в проекте (Чинит баг создания проектов вместо задач)
+        // 4. Создать новую задачу в проекте
         [HttpPost("tasks")]
         public async Task<ActionResult<TaskItem>> CreateTask([FromBody] System.Text.Json.JsonElement json)
         {
@@ -91,14 +91,15 @@ namespace GanttManager.API.Controllers
 
             var newTask = new TaskItem
             {
-                Id = Guid.NewGuid(), // Всегда жестко генерируем НОВЫЙ ID на бэке, чтобы не было конфликтов
+                Id = Guid.NewGuid(), // Генерируем новый ID на бэке
                 ProjectId = projId,
                 Name = json.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "Новая задача" : "Новая задача",
                 Status = json.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? "Todo" : "Todo",
                 StartDate = startProp.GetDateTime(),
                 EndDate = endProp.GetDateTime(),
                 ExecutorId = json.TryGetProperty("executorId", out var execProp) && Guid.TryParse(execProp.GetString(), out var eId) ? eId : null,
-                Dependencies = new List<TaskDependency>()
+                ParentDependencies = new List<TaskDependency>(),
+                ChildDependencies = new List<TaskDependency>()
             };
 
             _context.Tasks.Add(newTask);
@@ -111,7 +112,8 @@ namespace GanttManager.API.Controllers
         public async Task<IActionResult> UpdateTask(Guid id, [FromBody] System.Text.Json.JsonElement json)
         {
             var task = await _context.Tasks
-                .Include(t => t.Dependencies)
+                .Include(t => t.ParentDependencies)
+                .Include(t => t.ChildDependencies) // Включаем обе коллекции для корректного BFS обхода графа
                 .FirstOrDefaultAsync(t => t.Id == id);
 
             if (task == null) return NotFound(new { message = "Задача не найдена" });
@@ -124,7 +126,7 @@ namespace GanttManager.API.Controllers
             DateTime newStartDate = startProp.GetDateTime();
             DateTime newEndDate = endProp.GetDateTime();
 
-            // Вычисляем сдвиг по дням для твоего алгоритма Ганта
+            // Вычисляем сдвиг по дням для алгоритма Ганта
             int daysShift = (newStartDate - task.StartDate).Days;
 
             var validationService = new Services.TaskValidationService();
@@ -140,7 +142,7 @@ namespace GanttManager.API.Controllers
             task.StartDate = newStartDate;
             task.EndDate = newEndDate;
 
-            // Если ползунок сдвинули — запускаем твой каскадный BFS алгоритм
+            // Если ползунок сдвинули — запускаем каскадный BFS алгоритм
             if (daysShift != 0)
             {
                 var ganttEngine = new Services.GanttEngine();
