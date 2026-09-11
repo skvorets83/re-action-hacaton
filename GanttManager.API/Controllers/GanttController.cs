@@ -166,22 +166,39 @@ namespace GanttManager.API.Controllers
         // 🔗 УПРАВЛЕНИЕ ЗАВИСИМОСТЯМИ (СТРЕЛОЧКИ ГАНТА)
         // ==========================================
 
-        // 9. Создать связь между двумя задачами (Построить стрелочку)
+        // 9. Создать связь между двумя задачами
         [HttpPost("tasks/{id}/dependencies")]
-        public async Task<IActionResult> AddDependency(Guid id, [FromBody] TaskDependency dependencyDto)
+        public async Task<ActionResult> AddDependency(Guid id, [FromBody] System.Text.Json.Nodes.JsonObject body)
         {
-            var parentExists = await _context.Tasks.AnyAsync(t => t.Id == dependencyDto.ParentTaskId);
-            var childExists = await _context.Tasks.AnyAsync(t => t.Id == id);
+            // Безопасно достаем ParentTaskId из JSON, не обращая внимания на регистр букв
+            if (body == null || (!body.TryGetPropertyValue("parentTaskId", out var parentNode) && !body.TryGetPropertyValue("ParentTaskId", out parentNode)))
+            {
+                return BadRequest(new { message = "Поле parentTaskId обязательно в body." });
+            }
 
-            if (!parentExists || !childExists) return NotFound(new { message = "Одна из указанных задач не найдена" });
+            if (!Guid.TryParse(parentNode?.ToString(), out Guid parentTaskId))
+            {
+                return BadRequest(new { message = "Некорректный формат GUID в parentTaskId." });
+            }
 
-            var dependencyExists = await _context.TaskDependencies.AnyAsync(td => td.ParentTaskId == dependencyDto.ParentTaskId && td.ChildTaskId == id);
-            if (dependencyExists) return BadRequest(new { message = "Такая связь уже существует" });
+            Guid childTaskId = id; // Забираем из URL
+
+            var parentExists = await _context.Tasks.AnyAsync(t => t.Id == parentTaskId);
+            var childExists = await _context.Tasks.AnyAsync(t => t.Id == childTaskId);
+
+            if (!parentExists || !childExists)
+                return NotFound(new { message = "Одна из указанных задач не найдена" });
+
+            var dependencyExists = await _context.TaskDependencies.AnyAsync(td =>
+                td.ParentTaskId == parentTaskId && td.ChildTaskId == childTaskId);
+
+            if (dependencyExists)
+                return BadRequest(new { message = "Такая связь уже существует" });
 
             var dependency = new TaskDependency
             {
-                ParentTaskId = dependencyDto.ParentTaskId,
-                ChildTaskId = id
+                ParentTaskId = parentTaskId,
+                ChildTaskId = childTaskId
             };
 
             _context.TaskDependencies.Add(dependency);
@@ -189,9 +206,6 @@ namespace GanttManager.API.Controllers
             return Ok(new { message = "Связь успешно добавлена" });
         }
 
-        // ==========================================
-        // 👤 УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ (ИСПОЛНИТЕЛИ)
-        // ==========================================
 
         // 10. Получить список всех пользователей (Четкий контракт для фронтенда)
         [HttpGet("users")]
