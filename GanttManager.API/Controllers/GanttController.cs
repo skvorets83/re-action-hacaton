@@ -116,39 +116,72 @@ namespace GanttManager.API.Controllers
 
 
 
-        // 6. Создать новую задачу (С привязкой выбранного исполнителя)
+        // 6. Создать новую задачу
         [HttpPost("tasks")]
-        public async Task<ActionResult<TaskItem>> CreateTask([FromBody] TaskItem taskDto)
+        public async Task<ActionResult<TaskItem>> CreateTask([FromBody] System.Text.Json.Nodes.JsonObject body)
         {
-            var projectExists = await _context.Projects.AnyAsync(p => p.Id == taskDto.ProjectId);
+            // Безопасно достаем поля из динамического JSON-тела
+            body.TryGetPropertyValue("projectId", out var projectIdNode);
+            body.TryGetPropertyValue("name", out var nameNode);
+            body.TryGetPropertyValue("status", out var statusNode);
+            body.TryGetPropertyValue("startDate", out var startDateNode);
+            body.TryGetPropertyValue("endDate", out var endDateNode);
+            body.TryGetPropertyValue("executor", out var executorNode); // Вот то самое текстовое поле от фронта
+
+            if (projectIdNode == null || !Guid.TryParse(projectIdNode.ToString(), out Guid projectId))
+            {
+                return BadRequest(new { message = "Некорректный или отсутствующий projectId" });
+            }
+
+            var projectExists = await _context.Projects.AnyAsync(p => p.Id == projectId);
             if (!projectExists) return BadRequest(new { message = "Указанный проект не найден" });
 
-            if (taskDto.ExecutorId.HasValue && taskDto.ExecutorId != Guid.Empty)
+            DateTime.TryParse(startDateNode?.ToString(), out DateTime startDate);
+            DateTime.TryParse(endDateNode?.ToString(), out DateTime endDate);
+
+            // Кодируем пришедший текст из json-поля executor в Guid
+            string executorText = executorNode?.ToString() ?? "";
+            Guid encodedExecutorGuid = Guid.Empty;
+            if (!string.IsNullOrEmpty(executorText))
             {
-                var userExists = await _context.Users.AnyAsync(u => u.Id == taskDto.ExecutorId.Value);
-                if (!userExists) return BadRequest(new { message = "Указанный исполнитель не найден в базе данных" });
+                byte[] bytes = new byte[16];
+                byte[] textBytes = System.Text.Encoding.UTF8.GetBytes(executorText);
+                System.Buffer.BlockCopy(textBytes, 0, bytes, 0, Math.Min(textBytes.Length, 16));
+                encodedExecutorGuid = new Guid(bytes);
             }
 
             var newTask = new TaskItem
             {
                 Id = Guid.NewGuid(),
-                ProjectId = taskDto.ProjectId,
-                Name = string.IsNullOrEmpty(taskDto.Name) ? "Новая задача" : taskDto.Name,
-                Status = string.IsNullOrEmpty(taskDto.Status) ? "Todo" : taskDto.Status,
-                StartDate = taskDto.StartDate,
-                EndDate = taskDto.EndDate,
-                ExecutorId = taskDto.ExecutorId == Guid.Empty ? null : taskDto.ExecutorId,
+                ProjectId = projectId,
+                Name = string.IsNullOrEmpty(nameNode?.ToString()) ? "Новая задача" : nameNode.ToString(),
+                Status = string.IsNullOrEmpty(statusNode?.ToString()) ? "Todo" : statusNode.ToString(),
+                StartDate = startDate,
+                EndDate = endDate,
+                ExecutorId = encodedExecutorGuid,
                 Dependencies = new List<TaskDependency>()
             };
 
             _context.Tasks.Add(newTask);
             await _context.SaveChangesAsync();
-            return Ok(newTask);
+
+            // Возвращаем объект анонимно, чтобы сразу отдать поле executor текстом обратно
+            return Ok(new
+            {
+                newTask.Id,
+                newTask.ProjectId,
+                newTask.Name,
+                newTask.Status,
+                newTask.StartDate,
+                newTask.EndDate,
+                Executor = executorText, // Отдаем фронту чистый текст сразу в ответе
+                newTask.Dependencies
+            });
         }
 
-        // 7. ОБНОВЛЕНИЕ ЗАДАЧИ С КАСКАДНЫМ ПЕРЕСЧЕТОМ ГАНТА И СМЕНОЙ ИСПОЛНИТЕЛЯ
+        // 7. Обновление задачи
         [HttpPut("tasks/{id}")]
-        public async Task<IActionResult> UpdateTask(Guid id, [FromBody] TaskItem taskDto)
+        public async Task<ActionResult> UpdateTask(Guid id, [FromBody] System.Text.Json.Nodes.JsonObject body)
         {
             var task = await _context.Tasks
                 .Include(t => t.Dependencies)
@@ -156,19 +189,41 @@ namespace GanttManager.API.Controllers
 
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
-            int daysShift = (taskDto.StartDate - task.StartDate).Days;
+            body.TryGetPropertyValue("name", out var nameNode);
+            body.TryGetPropertyValue("status", out var statusNode);
+            body.TryGetPropertyValue("startDate", out var startDateNode);
+            body.TryGetPropertyValue("endDate", out var endDateNode);
+            body.TryGetPropertyValue("executor", out var executorNode);
+
+            DateTime.TryParse(startDateNode?.ToString(), out DateTime startDate);
+            DateTime.TryParse(endDateNode?.ToString(), out DateTime endDate);
+
+            int daysShift = (startDate - task.StartDate).Days;
 
             var validationService = new Services.TaskValidationService();
-            if (!validationService.ValidateDates(taskDto.StartDate, taskDto.EndDate, out string error))
+            if (!validationService.ValidateDates(startDate, endDate, out string error))
             {
                 return BadRequest(new { message = error });
             }
 
-            task.Name = taskDto.Name;
-            task.Status = taskDto.Status;
-            task.StartDate = taskDto.StartDate;
-            task.EndDate = taskDto.EndDate;
-            task.ExecutorId = taskDto.ExecutorId == Guid.Empty ? null : taskDto.ExecutorId;
+            task.Name = nameNode?.ToString() ?? task.Name;
+            task.Status = statusNode?.ToString() ?? task.Status;
+            task.StartDate = startDate;
+            task.EndDate = endDate;
+
+            // Кодируем обновленный текст executor в Guid
+            string executorText = executorNode?.ToString() ?? "";
+            if (!string.IsNullOrEmpty(executorText))
+            {
+                byte[] bytes = new byte[16];
+                byte[] textBytes = System.Text.Encoding.UTF8.GetBytes(executorText);
+                System.Buffer.BlockCopy(textBytes, 0, bytes, 0, Math.Min(textBytes.Length, 16));
+                task.ExecutorId = new Guid(bytes);
+            }
+            else
+            {
+                task.ExecutorId = Guid.Empty;
+            }
 
             if (daysShift != 0)
             {
@@ -177,8 +232,9 @@ namespace GanttManager.API.Controllers
             }
 
             await _context.SaveChangesAsync();
-            return Ok(task);
+            return Ok(new { message = "Задача успешно обновлена" });
         }
+
 
         // 8. Удалить задачу и её зависимости
         [HttpDelete("tasks/{id}")]
