@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using GanttManager.API;
@@ -10,6 +12,7 @@ namespace GanttManager.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class GanttController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -19,18 +22,21 @@ namespace GanttManager.API.Controllers
             _context = context;
         }
 
-        // ==========================================
-        // 📁 УПРАВЛЕНИЕ ПРОЕКТАМИ (CRUD)
-        // ==========================================
-
-        // 1. Получить все проекты со списком их задач
         [HttpGet("projects")]
         public async Task<ActionResult<IEnumerable<Project>>> GetProjects()
         {
-            return await _context.Projects.Include(p => p.Tasks).ToListAsync();
+            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdString, out var currentUserId))
+            {
+                return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
+            }
+
+            return await _context.Projects
+                .Where(p => p.OwnerId == currentUserId)
+                .Include(p => p.Tasks)
+                .ToListAsync();
         }
 
-        // 2. Создать новый проект (Всеядный эндпоинт)
         [HttpPost("projects")]
         public async Task<ActionResult<Project>> CreateProject([FromBody] System.Text.Json.JsonElement json)
         {
@@ -39,12 +45,18 @@ namespace GanttManager.API.Controllers
                 return BadRequest(new { message = "Поле name является обязательным" });
             }
 
+            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdString, out var currentUserId))
+            {
+                return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
+            }
+
             var newProject = new Project
             {
                 Id = Guid.NewGuid(),
                 Name = nameProp.GetString() ?? "Новый проект",
                 Description = json.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? "" : "",
-                OwnerId = json.TryGetProperty("ownerId", out var ownerProp) && Guid.TryParse(ownerProp.GetString(), out var oId) ? oId : Guid.Empty,
+                OwnerId = currentUserId,
                 CreatedAt = DateTime.UtcNow,
                 Tasks = new List<TaskItem>()
             };
@@ -54,21 +66,44 @@ namespace GanttManager.API.Controllers
             return Ok(newProject);
         }
 
-        // ==========================================
-        // 📊 УПРАВЛЕНИЕ ЗАДАЧАМИ
-        // ==========================================
+        [HttpDelete("projects/{id}")]
+        public async Task<IActionResult> DeleteProject(Guid id)
+        {
+            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdString, out var currentUserId))
+            {
+                return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
+            }
 
-        // 3. Получить все задачи конкретного проекта с их родительскими зависимостями
+            var project = await _context.Projects.FindAsync(id);
+            if (project == null) return NotFound(new { message = "Проект не найден" });
+
+            if (project.OwnerId != currentUserId)
+            {
+                return Forbid();
+            }
+
+            _context.Projects.Remove(project);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
         [HttpGet("projects/{projectId}/tasks")]
         public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasks(Guid projectId)
         {
+            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid.TryParse(userIdString, out var currentUserId);
+
+            var projectExists = await _context.Projects.AnyAsync(p => p.Id == projectId && p.OwnerId == currentUserId);
+            if (!projectExists) return Forbid();
+
             return await _context.Tasks
                 .Where(t => t.ProjectId == projectId)
-                .Include(t => t.ParentDependencies) // Подгружаем задачи, от которых зависит текущая
+                .Include(t => t.ParentDependencies)
                 .ToListAsync();
         }
 
-        // 4. Создать новую задачу в проекте
         [HttpPost("tasks")]
         public async Task<ActionResult<TaskItem>> CreateTask([FromBody] System.Text.Json.JsonElement json)
         {
@@ -77,11 +112,13 @@ namespace GanttManager.API.Controllers
                 return BadRequest(new { message = "Обязательное поле projectId отсутствует или имеет неверный формат GUID" });
             }
 
-            // Проверяем, существует ли вообще такой проект в PostgreSQL
-            var projectExists = await _context.Projects.AnyAsync(p => p.Id == projId);
-            if (!projectExists)
+            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid.TryParse(userIdString, out var currentUserId);
+
+            var project = await _context.Projects.FirstOrDefaultAsync(p => p.Id == projId && p.OwnerId == currentUserId);
+            if (project == null)
             {
-                return BadRequest(new { message = $"Проект с ID {projId} не найден в базе данных" });
+                return BadRequest(new { message = $"Проект с ID {projId} не найден или у вас нет прав на его редактирование" });
             }
 
             if (!json.TryGetProperty("startDate", out var startProp) || !json.TryGetProperty("endDate", out var endProp))
@@ -91,7 +128,7 @@ namespace GanttManager.API.Controllers
 
             var newTask = new TaskItem
             {
-                Id = Guid.NewGuid(), // Генерируем новый ID на бэке
+                Id = Guid.NewGuid(),
                 ProjectId = projId,
                 Name = json.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "Новая задача" : "Новая задача",
                 Status = json.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? "Todo" : "Todo",
@@ -107,16 +144,21 @@ namespace GanttManager.API.Controllers
             return Ok(newTask);
         }
 
-        // 5. ОБНОВЛЕНИЕ ЗАДАЧИ С КАСКАДНЫМ ПЕРЕСЧЕТОМ ДАТ ГАНТА
         [HttpPut("tasks/{id}")]
         public async Task<IActionResult> UpdateTask(Guid id, [FromBody] System.Text.Json.JsonElement json)
         {
             var task = await _context.Tasks
                 .Include(t => t.ParentDependencies)
-                .Include(t => t.ChildDependencies) // Включаем обе коллекции для корректного BFS обхода графа
+                .Include(t => t.ChildDependencies)
                 .FirstOrDefaultAsync(t => t.Id == id);
 
             if (task == null) return NotFound(new { message = "Задача не найдена" });
+
+            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid.TryParse(userIdString, out var currentUserId);
+
+            var hasAccess = await _context.Projects.AnyAsync(p => p.Id == task.ProjectId && p.OwnerId == currentUserId);
+            if (!hasAccess) return Forbid();
 
             if (!json.TryGetProperty("startDate", out var startProp) || !json.TryGetProperty("endDate", out var endProp))
             {
@@ -126,7 +168,6 @@ namespace GanttManager.API.Controllers
             DateTime newStartDate = startProp.GetDateTime();
             DateTime newEndDate = endProp.GetDateTime();
 
-            // Вычисляем сдвиг по дням для алгоритма Ганта
             int daysShift = (newStartDate - task.StartDate).Days;
 
             var validationService = new Services.TaskValidationService();
@@ -142,7 +183,6 @@ namespace GanttManager.API.Controllers
             task.StartDate = newStartDate;
             task.EndDate = newEndDate;
 
-            // Если ползунок сдвинули — запускаем каскадный BFS алгоритм
             if (daysShift != 0)
             {
                 var ganttEngine = new Services.GanttEngine();
@@ -153,12 +193,17 @@ namespace GanttManager.API.Controllers
             return Ok(task);
         }
 
-        // 6. УДАЛЕНИЕ ЗАДАЧИ И ВСЕХ ЕЁ СВЯЗЕЙ
         [HttpDelete("tasks/{id}")]
         public async Task<IActionResult> DeleteTask(Guid id)
         {
             var task = await _context.Tasks.FindAsync(id);
             if (task == null) return NotFound(new { message = "Задача не найдена" });
+
+            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid.TryParse(userIdString, out var currentUserId);
+
+            var hasAccess = await _context.Projects.AnyAsync(p => p.Id == task.ProjectId && p.OwnerId == currentUserId);
+            if (!hasAccess) return Forbid();
 
             _context.Tasks.Remove(task);
             await _context.SaveChangesAsync();
