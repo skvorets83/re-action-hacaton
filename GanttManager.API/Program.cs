@@ -9,7 +9,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 // --- НАСТРОЙКА ПОДКЛЮЧЕНИЯ К БАЗЕ ДАННЫХ ---
 var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
-
 if (string.IsNullOrEmpty(connectionString))
 {
     connectionString = "Host=db-team-cmtvq2ykq00b4mx01tjøtg30q;Port=5432;Database=db_re_action_hacaton;Username=u_cntvr971k0;Password=QFV5jJ0rm3DBIfk4IxFyHLDndTVXlfl;Timeout=300;SSL Mode=Prefer;Trust Server Certificate=true;";
@@ -28,7 +27,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // --------------------------------------------
 
 // --- НАСТРОЙКА JWT АУТЕНТИФИКАЦИИ ---
-var secretKey = "SuperSecretKeyGanttManager2026ProtectedAndLongEnough!";
+// ВНИМАНИЕ: Строку Clear() убрали! Оставляем стандартный маппинг .NET по умолчанию, как просил фронт.
+var fixedSecretKey = "SuperSecretKeyGanttManager2026ProtectedAndLongEnough!";
 
 builder.Services.AddAuthentication(options =>
 {
@@ -39,11 +39,11 @@ builder.Services.AddAuthentication(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
     {
-        ValidateIssuer = false, // Отключаем строгую проверку эмитента для хакатона
-        ValidateAudience = false, // Отключаем проверку получателя
+        ValidateIssuer = false, // Отключаем, чтобы облако не конфликтовало
+        ValidateAudience = false, // Отключаем
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(fixedSecretKey)),
         ClockSkew = TimeSpan.Zero
     };
 });
@@ -65,7 +65,6 @@ builder.Services.AddControllers()
     });
 
 builder.Services.AddEndpointsApiExplorer();
-
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "GanttManager API", Version = "v1" });

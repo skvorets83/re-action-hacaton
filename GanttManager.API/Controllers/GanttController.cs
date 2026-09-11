@@ -12,7 +12,7 @@ namespace GanttManager.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
+    [Authorize] // Защита включена обратно
     public class GanttController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -24,8 +24,8 @@ namespace GanttManager.API.Controllers
 
         private string GetCurrentUserIdString()
         {
-            return User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                 ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
+            // Строгое нативное чтение по умолчанию, которое просил фронтендер
+            return User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         }
 
         [HttpGet("projects")]
