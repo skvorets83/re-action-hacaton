@@ -162,5 +162,85 @@ namespace GanttManager.API.Controllers
             await _context.SaveChangesAsync();
             return NoContent();
         }
+        [HttpGet("users")]
+        public async Task<ActionResult<IEnumerable<object>>> GetUsers()
+        {
+            // Загружаем пользователей из PostgreSQL
+            var users = await _context.Users.ToListAsync();
+
+            int counter = 1;
+            var result = new List<object>();
+
+            foreach (var u in users)
+            {
+                // С помощью рефлексии безопасно ищем ХОТЬ КАКОЕ-ТО текстовое поле в модели Матвея
+                string detectedName = u.GetType().GetProperties()
+                    .Where(p => p.PropertyType == typeof(string) && p.Name != "PasswordHash" && p.Name != "Role")
+                    .Select(p => p.GetValue(u)?.ToString())
+                    .FirstOrDefault(v => !string.IsNullOrEmpty(v)) ?? $"Разработчик {counter++}";
+
+                result.Add(new
+                {
+                    id = u.Id,
+                    name = detectedName,
+                    email = detectedName.Contains("@") ? detectedName : $"{detectedName}@example.com"
+                });
+            }
+
+            return Ok(result);
+        }
+        // 9. ПОЛУЧИТЬ ОДИН ПРОЕКТ ПО ID
+        [HttpGet("projects/{id}")]
+        public async Task<ActionResult<Project>> GetProjectById(Guid id)
+        {
+            var project = await _context.Projects.Include(p => p.Tasks).FirstOrDefaultAsync(p => p.Id == id);
+            if (project == null) return NotFound(new { message = "Проект не найден" });
+            return Ok(project);
+        }
+
+        // 10. ОБНОВИТЬ ИМЯ/ОПИСАНИЕ ПРОЕКТА
+        [HttpPut("projects/{id}")]
+        public async Task<IActionResult> UpdateProject(Guid id, [FromBody] System.Text.Json.JsonElement json)
+        {
+            var project = await _context.Projects.FindAsync(id);
+            if (project == null) return NotFound(new { message = "Проект не найден" });
+
+            if (json.TryGetProperty("name", out var nameProp)) project.Name = nameProp.GetString() ?? project.Name;
+            if (json.TryGetProperty("description", out var descProp)) project.Description = descProp.GetString() ?? project.Description;
+
+            await _context.SaveChangesAsync();
+            return Ok(project);
+        }
+
+        // 11. СОЗДАТЬ СВЯЗЬ МЕЖДУ ЗАДАЧАМИ (ПОСТРОИТЬ СТРЕЛОЧКУ)
+        [HttpPost("tasks/{id}/dependencies")]
+        public async Task<IActionResult> AddDependency(Guid id, [FromBody] System.Text.Json.JsonElement json)
+        {
+            if (!json.TryGetProperty("parentTaskId", out var parentProp) || !Guid.TryParse(parentProp.GetString(), out var parentId))
+            {
+                return BadRequest(new { message = "Необходимо передать корректный parentTaskId" });
+            }
+
+            // Проверяем, существуют ли обе задачи в базе
+            var parentExists = await _context.Tasks.AnyAsync(t => t.Id == parentId);
+            var childExists = await _context.Tasks.AnyAsync(t => t.Id == id);
+
+            if (!parentExists || !childExists) return NotFound(new { message = "Одна из задач не найдена в базе" });
+
+            // Проверяем, нет ли уже такой связи, чтобы не поймать дубликат ключа в Postgres
+            var dependencyExists = await _context.TaskDependencies.AnyAsync(td => td.ParentTaskId == parentId && td.ChildTaskId == id);
+            if (dependencyExists) return BadRequest(new { message = "Такая связь уже существует" });
+
+            var dependency = new TaskDependency
+            {
+                ParentTaskId = parentId,
+                ChildTaskId = id
+            };
+
+            _context.TaskDependencies.Add(dependency);
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "Связь успешно добавлена" });
+        }
+
     }
 }
