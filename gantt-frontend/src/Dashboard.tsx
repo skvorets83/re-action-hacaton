@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import GanttChart from './GanttChart';
+import { logout, getStoredUser } from './api/authApi';
 import CommentsPanel from './CommentsPanel';
 import OverdueToast from './OverdueToast';
 import {
@@ -21,6 +22,7 @@ import {
 } from './api/tasksApi';
 import type { Task, TaskStatus, Project } from './api/tasksApi';
 
+import { useAuth } from './auth/AuthContext';
 
 type Tab = 'All' | TaskStatus;
 
@@ -30,6 +32,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('All');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const { user, logout } = useAuth();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string>('');
@@ -452,6 +455,24 @@ export default function Dashboard() {
             >
               📊 CSV
             </button>
+          )}
+          {user && (
+            <div className="flex items-center gap-2 ml-auto">
+              <span
+                className="text-xs text-gray-500 truncate max-w-[180px]"
+                title={user.email}
+              >
+                {user.email}
+              </span>
+              <button
+                type="button"
+                onClick={logout}
+                className="border border-gray-200 bg-white text-gray-700 hover:bg-red-50 hover:border-red-200 hover:text-red-700 text-xs font-bold py-2 px-3 rounded-lg transition"
+                title="Выйти из аккаунта"
+              >
+                🚪 Выйти
+              </button>
+            </div>
           )}
         </div>
 

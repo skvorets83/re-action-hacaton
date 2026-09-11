@@ -34,35 +34,37 @@ export interface Comment {
 
 
 // ---------- Константы ----------
-const ENV_URL =
-    (import.meta.env.VITE_API_URL as string | undefined) ??
-    (import.meta.env.VITE_API_BASE_URL as string | undefined);
 
-export const API_BASE_URL = ENV_URL ?? 'http://localhost:5209';
+export const API_BASE_URL = 'https://re-action-hacaton.relaxdev.ru';
 
 // ---------- HTTP ----------
+import { getToken, logout } from './authApi';
+
 async function http<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const token = getToken();                       // ← 1. берём токен из localStorage
     const res = await fetch(`${API_BASE_URL}${path}`, {
         headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),  // ← 2. добавляем заголовок
             ...(options.headers ?? {}),
         },
         ...options,
     });
 
-    if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(
-            `API ${res.status} ${res.statusText} — ${path}${text ? ` — ${text}` : ''}`
-        );
+    if (res.status === 401) {                        // ← 3. токен истёк — на логин
+        logout();
+        window.location.href = '/login';
+        throw new Error('Unauthorized');
     }
 
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`API ${res.status} ${res.statusText} — ${path}${text ? ` — ${text}` : ''}`);
+    }
     if (res.status === 204) return undefined as T;
-
     const ct = res.headers.get('content-type') ?? '';
     if (!ct.includes('application/json')) return (await res.text()) as unknown as T;
-
     return (await res.json()) as T;
 }
 
