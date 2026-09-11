@@ -28,10 +28,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // --------------------------------------------
 
 // --- НАСТРОЙКА JWT АУТЕНТИФИКАЦИИ ---
-
-var fixedSecretKey = "SuperSecretKeyGanttManager2026ProtectedAndLongEnough!";
-var fixedIssuer = "GanttManagerAPI";
-var fixedAudience = "GanttManagerClient";
+var secretKey = "SuperSecretKeyGanttManager2026ProtectedAndLongEnough!";
 
 builder.Services.AddAuthentication(options =>
 {
@@ -42,13 +39,11 @@ builder.Services.AddAuthentication(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
+        ValidateIssuer = false, // Отключаем строгую проверку эмитента для хакатона
+        ValidateAudience = false, // Отключаем проверку получателя
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = fixedIssuer,
-        ValidAudience = fixedAudience,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(fixedSecretKey)),
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
         ClockSkew = TimeSpan.Zero
     };
 });
@@ -96,19 +91,16 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// --- СТРОГИЙ ПОРЯДОК СБОРКИ КОНВЕЙЕРА (ОШИБКА БЫЛА ТУТ) ---
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseRouting(); // 1. Сначала определяем маршрут запроса
+app.UseRouting();
+app.UseCors("AllowAll");
 
-app.UseCors("AllowAll"); // 2. Затем применяем CORS-политики
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.UseAuthentication(); // 3. Проверяем, кто пришел (Расшифровываем JWT)
-app.UseAuthorization();  // 4. Проверяем права доступа к роуту
-
-app.MapControllers(); // 5. Направляем запрос в контроллер
-// -----------------------------------------------------------
+app.MapControllers();
 
 using (var scope = app.Services.CreateScope())
 {
