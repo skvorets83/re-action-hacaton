@@ -420,6 +420,60 @@ namespace GanttManager.API.Controllers
             return Ok(new { message = "Проект удалён" });
         }
 
+        // 14. Экспорт данных проекта
+[HttpGet("projects/{projectId}/export")]
+public async Task<ActionResult> ExportProject(Guid projectId)
+{
+    // 1. Ищем проект в БД
+    var project = await _context.Projects.FirstOrDefaultAsync(p => p.Id == projectId);
+    if (project == null)
+    {
+        return NotFound(new { message = "Проект не найден" });
+    }
+
+    // 2. Получаем все задачи проекта с их связями
+    var tasks = await _context.Tasks
+        .Where(t => t.ProjectId == projectId)
+        .Include(t => t.Dependencies)
+        .ToListAsync();
+
+    // 3. Формируем JSON строго по ТЗ фронтенда
+    var exportResult = new
+    {
+        project = new
+        {
+            id = project.Id,
+            name = project.Name,
+            // Вычисляем дату старта проекта по самой ранней задаче (или ставим текущую, если задач нет)
+            startDate = tasks.Any() ? tasks.Min(t => t.StartDate) : DateTime.UtcNow,
+            // Вычисляем дедлайн проекта по самой поздней задаче (или ставим +7 дней)
+            deadline = tasks.Any() ? tasks.Max(t => t.EndDate) : DateTime.UtcNow.AddDays(7)
+        },
+        exportedAt = DateTime.UtcNow,
+        tasks = tasks.Select(t => {
+            // Раскодируем имя исполнителя из Guid обратно в текст
+            var executorName = (t.ExecutorId == null || t.ExecutorId == Guid.Empty) 
+                ? "" 
+                : System.Text.Encoding.UTF8.GetString(t.ExecutorId.Value.ToByteArray()).TrimEnd('\0', ' ');
+
+            return new
+            {
+                id = t.Id,
+                name = t.Name,
+                status = t.Status,
+                startDate = t.StartDate,
+                endDate = t.EndDate,
+                executor = executorName,
+                dependencies = t.Dependencies.Select(d => new
+                {
+                    parentTaskId = d.ParentTaskId
+                }).ToList()
+            };
+        }).ToList()
+    };
+
+    return Ok(exportResult);
+}
 
     }
 }
