@@ -1,9 +1,6 @@
 using System.Text;
 using GanttManager.API;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,28 +23,6 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 // --------------------------------------------
 
-// --- НАСТРОЙКА JWT АУТЕНТИФИКАЦИИ ---
-// ВНИМАНИЕ: Строку Clear() убрали! Оставляем стандартный маппинг .NET по умолчанию, как просил фронт.
-var fixedSecretKey = "SuperSecretKeyGanttManager2026ProtectedAndLongEnough!";
-
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuer = false, // Отключаем, чтобы облако не конфликтовало
-        ValidateAudience = false, // Отключаем
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(fixedSecretKey)),
-        ClockSkew = TimeSpan.Zero
-    };
-});
-
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -65,28 +40,7 @@ builder.Services.AddControllers()
     });
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "GanttManager API", Version = "v1" });
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Description = "Введите JWT токен в формате: Bearer {ваш_токен}",
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer"
-    });
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-            },
-            Array.Empty<string>()
-        }
-    });
-});
+builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
@@ -96,8 +50,7 @@ app.UseSwaggerUI();
 app.UseRouting();
 app.UseCors("AllowAll");
 
-app.UseAuthentication();
-app.UseAuthorization();
+// УДАЛЕНО: Встроенная аутентификация полностью отключена, конвейер чист!
 
 app.MapControllers();
 

@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using GanttManager.API;
@@ -12,7 +12,6 @@ namespace GanttManager.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize] // Защита включена обратно
     public class GanttController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -24,17 +23,44 @@ namespace GanttManager.API.Controllers
 
         private string GetCurrentUserIdString()
         {
-            // Строгое нативное чтение по умолчанию, которое просил фронтендер
-            return User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Request.Headers.TryGetValue("Authorization", out var authHeader))
+                return null;
+
+            var headerValue = authHeader.ToString();
+            if (!headerValue.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var tokenString = headerValue.Substring("Bearer ".Length).Trim();
+
+            try
+            {
+                var handler = new JwtSecurityTokenHandler();
+                if (!handler.CanReadToken(tokenString)) return null;
+
+                var jwtToken = handler.ReadJwtToken(tokenString);
+
+                var userIdClaim = jwtToken.Claims.FirstOrDefault(c =>
+                    c.Type == "sub" ||
+                    c.Type == "id" ||
+                    c.Type == ClaimTypes.NameIdentifier ||
+                    c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier" ||
+                    c.Type == "nameid");
+
+                return userIdClaim?.Value;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         [HttpGet("projects")]
         public async Task<ActionResult<IEnumerable<Project>>> GetProjects()
         {
             var userIdString = GetCurrentUserIdString();
-            if (!Guid.TryParse(userIdString, out var currentUserId))
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var currentUserId))
             {
-                return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
+                return Unauthorized(new { message = "Не удалось определить пользователя из токена. Заголовок некорректен." });
             }
 
             return await _context.Projects
@@ -52,7 +78,7 @@ namespace GanttManager.API.Controllers
             }
 
             var userIdString = GetCurrentUserIdString();
-            if (!Guid.TryParse(userIdString, out var currentUserId))
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var currentUserId))
             {
                 return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
             }
@@ -76,7 +102,7 @@ namespace GanttManager.API.Controllers
         public async Task<IActionResult> DeleteProject(Guid id)
         {
             var userIdString = GetCurrentUserIdString();
-            if (!Guid.TryParse(userIdString, out var currentUserId))
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var currentUserId))
             {
                 return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
             }
@@ -94,12 +120,11 @@ namespace GanttManager.API.Controllers
 
             return NoContent();
         }
-
         [HttpGet("projects/{projectId}/tasks")]
         public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasks(Guid projectId)
         {
             var userIdString = GetCurrentUserIdString();
-            if (!Guid.TryParse(userIdString, out var currentUserId))
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var currentUserId))
             {
                 return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
             }
@@ -122,7 +147,7 @@ namespace GanttManager.API.Controllers
             }
 
             var userIdString = GetCurrentUserIdString();
-            if (!Guid.TryParse(userIdString, out var currentUserId))
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var currentUserId))
             {
                 return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
             }
@@ -167,7 +192,7 @@ namespace GanttManager.API.Controllers
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
             var userIdString = GetCurrentUserIdString();
-            if (!Guid.TryParse(userIdString, out var currentUserId))
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var currentUserId))
             {
                 return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
             }
@@ -215,7 +240,7 @@ namespace GanttManager.API.Controllers
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
             var userIdString = GetCurrentUserIdString();
-            if (!Guid.TryParse(userIdString, out var currentUserId))
+            if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var currentUserId))
             {
                 return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
             }
@@ -229,3 +254,4 @@ namespace GanttManager.API.Controllers
         }
     }
 }
+
