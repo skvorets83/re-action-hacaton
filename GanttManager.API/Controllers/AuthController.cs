@@ -1,6 +1,8 @@
-﻿using System.IdentityModel.Tokens.Jwt;
+﻿using System;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Threading.Tasks;
 using GanttManager.API.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,12 +15,10 @@ namespace GanttManager.API.Controllers
     public class AuthController : ControllerBase
     {
         private readonly AppDbContext _context;
-        private readonly IConfiguration _configuration;
 
-        public AuthController(AppDbContext context, IConfiguration configuration)
+        public AuthController(AppDbContext context)
         {
             _context = context;
-            _configuration = configuration;
         }
 
         [HttpPost("register")]
@@ -79,8 +79,11 @@ namespace GanttManager.API.Controllers
 
         private string GenerateJwtToken(User user)
         {
-            var jwtSettings = _configuration.GetSection("JwtSettings");
-            var secretKey = jwtSettings["SecretKey"]!;
+            // Жестко фиксируем те же самые значения, что и в Program.cs
+            var secretKey = "SuperSecretKeyGanttManager2026ProtectedAndLongEnough!";
+            var issuer = "GanttManagerAPI";
+            var audience = "GanttManagerClient";
+
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
@@ -92,10 +95,10 @@ namespace GanttManager.API.Controllers
             };
 
             var token = new JwtSecurityToken(
-                issuer: jwtSettings["Issuer"],
-                audience: jwtSettings["Audience"],
+                issuer: issuer,
+                audience: audience,
                 claims: claims,
-                expires: DateTime.UtcNow.AddMinutes(double.Parse(jwtSettings["ExpiryInMinutes"] ?? "1440")),
+                expires: DateTime.UtcNow.AddMinutes(1440),
                 signingCredentials: creds
             );
 
