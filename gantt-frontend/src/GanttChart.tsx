@@ -13,9 +13,15 @@ interface GanttChartProps {
 // YYYY-MM-DD → Date в локальной зоне (без UTC-сдвигов)
 const parseYMD = (s: string): Date => {
   const clean = s.includes('T') ? s.split('T')[0] : s;
-  return new Date(clean + 'T00:00:00');
+  const [y, m, d] = clean.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));   // ← UTC, а не локальное
 };
 
+const parseYMDPlusOne = (s: string): Date => {
+  const clean = s.includes('T') ? s.split('T')[0] : s;
+  const [y, m, d] = clean.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1));   // ← +1 день для end
+};
 // Date → YYYY-MM-DD (локально, без toISOString)
 const toYMD = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -34,7 +40,7 @@ function GanttChart({ tasks, onTasksUpdate }: GanttChartProps) {
     if (t.status === 'Overdue') barColor = '#ef4444';
 
     const parsedStart = parseYMD(t.start);
-    const parsedEnd = parseYMD(t.end);
+    const parsedEnd = parseYMDPlusOne(t.end);   // ← +1 день
     const validStart = isNaN(parsedStart.getTime()) ? new Date() : parsedStart;
     const validEnd = isNaN(parsedEnd.getTime()) ? new Date() : parsedEnd;
 
@@ -47,9 +53,10 @@ function GanttChart({ tasks, onTasksUpdate }: GanttChartProps) {
       progress,
       dependencies: Array.isArray(t.dependencies) ? t.dependencies : [],
       styles: {
-        progressColor: barColor,
+        backgroundColor: barColor + '55',           // полупрозрачный фон
+        backgroundSelectedColor: barColor + '99',
+        progressColor: barColor,                    // сплошной прогресс
         progressSelectedColor: barColor,
-        backgroundColor: '#f3f4f6',
       },
     };
   });

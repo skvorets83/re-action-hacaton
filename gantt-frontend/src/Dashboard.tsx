@@ -1,20 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import GanttChart from './GanttChart';
+import CommentsPanel from './CommentsPanel';
+import OverdueToast from './OverdueToast';
 import {
-  getTasks,
   getProjects,
+  getTasksByProject,
   createProject,
+  updateProject,
+  deleteProject,
   createTask,
   updateTask,
   deleteTask,
   applyAutoOverdue,
   persistTasks,
   wouldCreateCycle,
-  getUsers,
+  getOverdueTasks,
+  fetchProjectExport,
+  downloadJson,
 } from './api/tasksApi';
-import type { Task, TaskStatus, Project, User } from './api/tasksApi';
-
-
+import type { Task, TaskStatus, Project } from './api/tasksApi';
 
 
 type Tab = 'All' | TaskStatus;
@@ -26,26 +30,31 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [users, setUsers] = useState<User[]>([]);
-
-  useEffect(() => {
-    getUsers()
-      .then(setUsers)
-      .catch((e) => console.error('Не удалось загрузить пользователей:', e));
-  }, []);
-
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string>('');
 
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [projectForm, setProjectForm] = useState({ name: '', deadline: '' });
+  const [projectForm, setProjectForm] = useState({
+    name: '',
+    start: '',
+    deadline: '',
+  });
+  const [projectSettingsForm, setProjectSettingsForm] = useState({
+    name: '',
+    start: '',
+    deadline: '',
+  });
+
+  const [showOverdueToast, setShowOverdueToast] = useState(false);
+
   const [form, setForm] = useState({
     name: '',
     executor: '',
-    executorId: '',
     start: '',
     end: '',
     status: 'Todo' as TaskStatus,
@@ -57,23 +66,15 @@ export default function Dashboard() {
     [projects, currentProjectId]
   );
 
-  // ---------- Загрузка + авто-просрочка ----------
+  // ---------- Загрузка проектов ----------
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
-
-        // Сначала проекты — они нужны, чтобы знать currentProjectId (GUID)
         const ps = await getProjects();
         setProjects(ps);
-        if (ps.length > 0) {
-          setCurrentProjectId(ps[0].id);
-        }
+        if (ps.length > 0) setCurrentProjectId(ps[0].id);
 
-        // Потом задачи (пока только первого проекта — как раньше)
-        const data = await getTasks();
-        const normalized = applyAutoOverdue(data);
-        setTasks(normalized);
       } catch (e) {
         console.error(e);
       } finally {
@@ -82,16 +83,43 @@ export default function Dashboard() {
     })();
   }, []);
 
+  // ---------- Загрузка задач при смене проекта ----------
+  useEffect(() => {
+    if (!currentProjectId) return;
+    (async () => {
+      try {
+        setLoading(true);
+        const data = await getTasksByProject(currentProjectId);
+        const normalized = applyAutoOverdue(data);
+        setTasks((prev) => {
+          // объединяем со задачами других проектов
+          const others = prev.filter((t) => t.projectId !== currentProjectId);
+          return [...others, ...normalized];
+        });
+
+        if (getOverdueTasks(normalized).length > 0) {
+          setShowOverdueToast(true);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [currentProjectId]);
+
   // ---------- Задачи текущего проекта ----------
-  const currentProjectTasks = useMemo(() => {
-    return tasks.filter((t) => t.projectId === currentProjectId);
-  }, [tasks, currentProjectId]);
+  const currentProjectTasks = useMemo(
+    () => tasks.filter((t) => t.projectId === currentProjectId),
+    [tasks, currentProjectId]
+  );
 
   // ---------- Метрики ----------
   const total = currentProjectTasks.length;
   const done = currentProjectTasks.filter((t) => t.status === 'Done').length;
   const inProgress = currentProjectTasks.filter((t) => t.status === 'InProgress').length;
   const overdue = currentProjectTasks.filter((t) => t.status === 'Overdue').length;
+  const upcoming = currentProjectTasks.filter((t) => t.status === 'Todo').length;
   const projectProgress = total > 0 ? Math.round((done / total) * 100) : 0;
 
   const lastUnfinishedTaskEnd = currentProjectTasks
@@ -130,19 +158,51 @@ export default function Dashboard() {
       const created = await createProject({
         name: projectForm.name,
         description: '',
+        start: projectForm.start,
         deadline: projectForm.deadline,
       });
 
-      // Перезагружаем с бэка, чтобы получить реальные GUID'ы всех проектов
       const ps = await getProjects();
       setProjects(ps);
       setCurrentProjectId(created.id);
 
       setIsProjectModalOpen(false);
-      setProjectForm({ name: '', deadline: '' });
+      setProjectForm({ name: '', start: '', deadline: '' });
     } catch (err) {
       console.error(err);
       alert('Не удалось создать проект на сервере');
+    }
+  };
+
+  // ---------- Настройки проекта ----------
+  const openProjectSettings = () => {
+    if (!activeProject) return;
+    setProjectSettingsForm({
+      name: activeProject.name,
+      start: activeProject.startDate,
+      deadline: activeProject.deadline,
+    });
+    setIsProjectSettingsOpen(true);
+  };
+
+  const handleSaveProjectSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeProject) return;
+
+    try {
+      const updated = await updateProject(activeProject.id, {
+        name: projectSettingsForm.name,
+        start: projectSettingsForm.start,
+        deadline: projectSettingsForm.deadline,
+      });
+
+      setProjects((prev) =>
+        prev.map((p) => (p.id === updated.id ? updated : p))
+      );
+      setIsProjectSettingsOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось сохранить настройки проекта');
     }
   };
 
@@ -152,7 +212,6 @@ export default function Dashboard() {
     setForm({
       name: '',
       executor: '',
-      executorId: '',
       start: '',
       end: '',
       status: 'Todo',
@@ -168,7 +227,6 @@ export default function Dashboard() {
     setForm({
       name: t.name,
       executor: t.executor,
-      executorId: t.executorId ?? '',
       start: t.start,
       end: t.end,
       status: t.status,
@@ -181,12 +239,15 @@ export default function Dashboard() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.start || !form.end) return;
+    if (!currentProjectId) {
+      alert('Сначала выберите или создайте проект');
+      return;
+    }
 
     try {
       const taskPayload = {
         name: form.name,
-        executor: form.executor || 'Не назначен',
-        executorId: form.executorId || '00000000-0000-0000-0000-000000000000',
+        executor: form.executor.trim() || 'Не назначен',
         start: form.start,
         end: form.end,
         status: form.status,
@@ -199,8 +260,11 @@ export default function Dashboard() {
         setTasks(applyAutoOverdue(updated));
       } else {
         await createTask(taskPayload);
-        const fresh = await getTasks();
-        setTasks(applyAutoOverdue(fresh));
+        const fresh = await getTasksByProject(currentProjectId);
+        setTasks((prev) => {
+          const others = prev.filter((t) => t.projectId !== currentProjectId);
+          return [...others, ...applyAutoOverdue(fresh)];
+        });
       }
       setIsModalOpen(false);
     } catch (err) {
@@ -212,11 +276,52 @@ export default function Dashboard() {
   const handleDelete = async (id: string) => {
     if (!confirm('Удалить задачу?')) return;
     const updated = await deleteTask(id);
-    setTasks(applyAutoOverdue(updated));
+    const normalized = applyAutoOverdue(updated);
+    setTasks((prev) => {
+      const others = prev.filter((t) => t.projectId !== currentProjectId);
+      return [...others, ...normalized.filter((t) => t.projectId === currentProjectId)];
+    });
+  };
+  const handleDeleteProject = async () => {
+    if (!activeProject) return;
+    if (!confirm(`Удалить проект «${activeProject.name}»? Все задачи и зависимости будут удалены.`)) return;
+
+    try {
+      await deleteProject(activeProject.id);
+
+      // Перезагружаем список проектов
+      const ps = await getProjects();
+      setProjects(ps);
+
+      // Сбрасываем на первый проект (или пусто)
+      if (ps.length > 0) {
+        setCurrentProjectId(ps[0].id);
+      } else {
+        setCurrentProjectId('');
+        setTasks([]);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось удалить проект');
+    }
   };
 
 
 
+  // ---------- Экспорт ----------
+  const handleExport = async () => {
+    if (!currentProjectId) return;
+    try {
+      const data = await fetchProjectExport(currentProjectId);
+      const filename = `project-${(activeProject?.name ?? 'export').replace(/\s+/g, '-')}-${Date.now()}.json`;
+      downloadJson(data, filename);
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось экспортировать проект');
+    }
+  };
+
+  // ---------- Стили ----------
   const statusStyles: Record<TaskStatus, string> = {
     Todo: 'bg-gray-100 text-gray-700',
     InProgress: 'bg-amber-100 text-amber-700',
@@ -236,7 +341,7 @@ export default function Dashboard() {
   const toggleDep = (id: string) => {
     setForm((f) => {
       const has = f.dependencies.includes(id);
-      if (!has && editingId && wouldCreateCycle(editingId, id, tasks)) {
+      if (!has && editingId && wouldCreateCycle(editingId, id, currentProjectTasks)) {
         alert('Нельзя создать циклическую зависимость');
         return f;
       }
@@ -249,11 +354,16 @@ export default function Dashboard() {
     });
   };
 
+  // ================= RENDER =================
   return (
     <div className="p-6 bg-gray-50 min-h-screen font-sans text-gray-800">
+      {showOverdueToast && (
+        <OverdueToast count={overdue} onClose={() => setShowOverdueToast(false)} />
+      )}
+
       {/* Панель управления проектами */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200/60 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-xs">
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+      <div className="bg-white p-4 rounded-xl border border-gray-200/60 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
           <label className="text-xs font-bold uppercase text-gray-400 tracking-wider whitespace-nowrap">
             Выбор проекта:
           </label>
@@ -278,10 +388,37 @@ export default function Dashboard() {
           >
             📁 Создать проект
           </button>
+          {activeProject && (
+            <button
+              type="button"
+              onClick={openProjectSettings}
+              className="border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 text-xs font-bold py-2 px-3 rounded-lg transition"
+            >
+              ⚙️ Настройки
+            </button>
+          )}
+          {activeProject && (
+            <button
+              type="button"
+              onClick={handleDeleteProject}
+              className="border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-bold py-2 px-3 rounded-lg transition"
+            >
+              🗑 Удалить проект
+            </button>
+          )}
+          {activeProject && (
+            <button
+              type="button"
+              onClick={handleExport}
+              className="border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 text-xs font-bold py-2 px-3 rounded-lg transition"
+            >
+              💾 Экспорт
+            </button>
+          )}
         </div>
         {activeProject && (
           <div className="text-xs font-medium text-gray-500">
-            Плановый дедлайн проекта:{' '}
+            Дедлайн:{' '}
             <span className="font-mono text-gray-900 font-bold bg-gray-100 px-1.5 py-0.5 rounded">
               {activeProject.deadline}
             </span>
@@ -341,19 +478,45 @@ export default function Dashboard() {
       </div>
 
       {/* KPI карточки */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
         {[
-          { tab: 'All' as Tab, label: 'Всего', value: total, color: 'blue' },
-          { tab: 'Done' as Tab, label: 'Выполнено', value: done, color: 'green' },
-          { tab: 'InProgress' as Tab, label: 'В работе', value: inProgress, color: 'amber' },
-          { tab: 'Overdue' as Tab, label: 'Просрочено', value: overdue, color: 'red' },
+          {
+            tab: 'All' as Tab,
+            label: 'Всего',
+            value: total,
+            active: 'border-blue-500 ring-2 ring-blue-500/10',
+          },
+          {
+            tab: 'Todo' as Tab,
+            label: 'Предстоит',
+            value: upcoming,
+            active: 'border-gray-500 ring-2 ring-gray-500/10',
+          },
+          {
+            tab: 'InProgress' as Tab,
+            label: 'В работе',
+            value: inProgress,
+            active: 'border-amber-500 ring-2 ring-amber-500/10',
+          },
+          {
+            tab: 'Done' as Tab,
+            label: 'Готово',
+            value: done,
+            active: 'border-green-500 ring-2 ring-green-500/10',
+          },
+          {
+            tab: 'Overdue' as Tab,
+            label: 'Просрочено',
+            value: overdue,
+            active: 'border-red-500 ring-2 ring-red-500/10',
+          },
         ].map((c) => (
           <button
             key={c.tab}
             type="button"
             onClick={() => setActiveTab(c.tab)}
-            className={`p-5 rounded-2xl text-left border transition-all bg-white ${activeTab === c.tab
-              ? `border-${c.color}-500 ring-2 ring-${c.color}-500/10 shadow-md`
+            className={`p-4 rounded-2xl text-left border transition-all bg-white ${activeTab === c.tab
+              ? `${c.active} shadow-md`
               : 'border-gray-200/80 hover:border-gray-300'
               }`}
           >
@@ -390,7 +553,7 @@ export default function Dashboard() {
       </div>
 
       {/* Поиск */}
-      <div className="mb-5 bg-white p-4 rounded-xl border border-gray-200/60 shadow-xs flex items-center gap-3">
+      <div className="mb-5 bg-white p-4 rounded-xl border border-gray-200/60 flex items-center gap-3">
         <div className="text-gray-400">
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -437,7 +600,6 @@ export default function Dashboard() {
               <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
                 <tr>
                   <th className="p-4 font-semibold">Задача</th>
-                  <th className="p-4 font-semibold">Исполнитель</th>
                   <th className="p-4 font-semibold">Сроки</th>
                   <th className="p-4 font-semibold">Зависит от</th>
                   <th className="p-4 font-semibold">Статус</th>
@@ -452,7 +614,7 @@ export default function Dashboard() {
                   return (
                     <tr key={task.id} className="border-t border-gray-100 hover:bg-gray-50/50">
                       <td className="p-4 font-medium text-gray-900">{task.name}</td>
-                      <td className="p-4 text-gray-600">{task.executor}</td>
+
                       <td className="p-4 text-gray-600">
                         {task.start} → {task.end}
                       </td>
@@ -491,8 +653,13 @@ export default function Dashboard() {
         <div id="gantt">
           <GanttChart
             tasks={currentProjectTasks}
-            onTasksUpdate={(updated) => setTasks(applyAutoOverdue(updated))}
-
+            onTasksUpdate={(updated) => {
+              setTasks((prev) => {
+                const others = prev.filter((t) => t.projectId !== currentProjectId);
+                return [...others, ...applyAutoOverdue(updated)];
+              });
+            }}
+            onTaskClick={openEdit}
           />
         </div>
       )}
@@ -527,19 +694,35 @@ export default function Dashboard() {
                   placeholder="Например: Разработка ядра платформы"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                  Плановый дедлайн проекта
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={projectForm.deadline}
-                  onChange={(e) =>
-                    setProjectForm({ ...projectForm, deadline: e.target.value })
-                  }
-                  className="w-full border border-gray-200 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 text-gray-600"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                    Дата старта
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={projectForm.start}
+                    onChange={(e) =>
+                      setProjectForm({ ...projectForm, start: e.target.value })
+                    }
+                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 text-gray-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                    Дедлайн
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={projectForm.deadline}
+                    onChange={(e) =>
+                      setProjectForm({ ...projectForm, deadline: e.target.value })
+                    }
+                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 text-gray-600"
+                  />
+                </div>
               </div>
               <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 mt-6">
                 <button
@@ -554,6 +737,94 @@ export default function Dashboard() {
                   className="bg-blue-600 text-white font-semibold py-2 px-5 rounded-lg text-sm"
                 >
                   Создать
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка: настройки проекта */}
+      {isProjectSettingsOpen && activeProject && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900">Настройки проекта</h2>
+              <button
+                type="button"
+                onClick={() => setIsProjectSettingsOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveProjectSettings} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                  Название проекта
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={projectSettingsForm.name}
+                  onChange={(e) =>
+                    setProjectSettingsForm({
+                      ...projectSettingsForm,
+                      name: e.target.value,
+                    })
+                  }
+                  className="w-full border border-gray-200 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                    Дата старта
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={projectSettingsForm.start}
+                    onChange={(e) =>
+                      setProjectSettingsForm({
+                        ...projectSettingsForm,
+                        start: e.target.value,
+                      })
+                    }
+                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                    Дедлайн
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={projectSettingsForm.deadline}
+                    onChange={(e) =>
+                      setProjectSettingsForm({
+                        ...projectSettingsForm,
+                        deadline: e.target.value,
+                      })
+                    }
+                    className="w-full border border-gray-200 rounded-lg p-2.5 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsProjectSettingsOpen(false)}
+                  className="bg-gray-100 text-gray-700 font-semibold py-2 px-4 rounded-lg text-sm"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  className="bg-blue-600 text-white font-semibold py-2 px-5 rounded-lg text-sm"
+                >
+                  Сохранить
                 </button>
               </div>
             </form>
@@ -596,25 +867,13 @@ export default function Dashboard() {
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
                   Исполнитель
                 </label>
-                <select
-                  value={form.executorId ?? ''}
-                  onChange={(e) => {
-                    const u = users.find((x) => x.id === e.target.value);
-                    setForm({
-                      ...form,
-                      executorId: e.target.value,
-                      executor: u?.name ?? '',
-                    });
-                  }}
-                  className="w-full border border-gray-200 rounded-lg p-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">— Не назначен —</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  type="text"
+                  value={form.executor}
+                  onChange={(e) => setForm({ ...form, executor: e.target.value })}
+                  placeholder="Введите имя исполнителя"
+                  className="w-full border border-gray-200 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -690,6 +949,11 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
+
+              {/* Комментарии — только при редактировании */}
+              {editingId && (
+                <CommentsPanel taskId={editingId} author={form.executor || 'Аноним'} />
+              )}
 
               <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 mt-6">
                 <button
