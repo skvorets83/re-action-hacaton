@@ -22,12 +22,16 @@ namespace GanttManager.API.Controllers
             _context = context;
         }
 
+        private string GetCurrentUserIdString()
+        {
+            return User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                 ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
+        }
+
         [HttpGet("projects")]
         public async Task<ActionResult<IEnumerable<Project>>> GetProjects()
         {
-            var userIdString = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                 ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
-
+            var userIdString = GetCurrentUserIdString();
             if (!Guid.TryParse(userIdString, out var currentUserId))
             {
                 return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
@@ -47,7 +51,7 @@ namespace GanttManager.API.Controllers
                 return BadRequest(new { message = "Поле name является обязательным" });
             }
 
-            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userIdString = GetCurrentUserIdString();
             if (!Guid.TryParse(userIdString, out var currentUserId))
             {
                 return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
@@ -71,7 +75,7 @@ namespace GanttManager.API.Controllers
         [HttpDelete("projects/{id}")]
         public async Task<IActionResult> DeleteProject(Guid id)
         {
-            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userIdString = GetCurrentUserIdString();
             if (!Guid.TryParse(userIdString, out var currentUserId))
             {
                 return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
@@ -94,8 +98,11 @@ namespace GanttManager.API.Controllers
         [HttpGet("projects/{projectId}/tasks")]
         public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasks(Guid projectId)
         {
-            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            Guid.TryParse(userIdString, out var currentUserId);
+            var userIdString = GetCurrentUserIdString();
+            if (!Guid.TryParse(userIdString, out var currentUserId))
+            {
+                return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
+            }
 
             var projectExists = await _context.Projects.AnyAsync(p => p.Id == projectId && p.OwnerId == currentUserId);
             if (!projectExists) return Forbid();
@@ -114,8 +121,11 @@ namespace GanttManager.API.Controllers
                 return BadRequest(new { message = "Обязательное поле projectId отсутствует или имеет неверный формат GUID" });
             }
 
-            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            Guid.TryParse(userIdString, out var currentUserId);
+            var userIdString = GetCurrentUserIdString();
+            if (!Guid.TryParse(userIdString, out var currentUserId))
+            {
+                return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
+            }
 
             var project = await _context.Projects.FirstOrDefaultAsync(p => p.Id == projId && p.OwnerId == currentUserId);
             if (project == null)
@@ -156,8 +166,11 @@ namespace GanttManager.API.Controllers
 
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
-            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            Guid.TryParse(userIdString, out var currentUserId);
+            var userIdString = GetCurrentUserIdString();
+            if (!Guid.TryParse(userIdString, out var currentUserId))
+            {
+                return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
+            }
 
             var hasAccess = await _context.Projects.AnyAsync(p => p.Id == task.ProjectId && p.OwnerId == currentUserId);
             if (!hasAccess) return Forbid();
@@ -201,8 +214,11 @@ namespace GanttManager.API.Controllers
             var task = await _context.Tasks.FindAsync(id);
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
-            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            Guid.TryParse(userIdString, out var currentUserId);
+            var userIdString = GetCurrentUserIdString();
+            if (!Guid.TryParse(userIdString, out var currentUserId))
+            {
+                return Unauthorized(new { message = "Не удалось определить пользователя из токена" });
+            }
 
             var hasAccess = await _context.Projects.AnyAsync(p => p.Id == task.ProjectId && p.OwnerId == currentUserId);
             if (!hasAccess) return Forbid();
