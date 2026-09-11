@@ -53,9 +53,9 @@ async function http<T>(path: string, options: RequestInit = {}): Promise<T> {
     });
 
     if (res.status === 401) {                        // ← 3. токен истёк — на логин
-        logout();
-        window.location.href = '/login';
-        throw new Error('Unauthorized');
+        // logout();
+        // window.location.href = '/login';
+        // throw new Error('Unauthorized');
     }
 
     if (!res.ok) {
