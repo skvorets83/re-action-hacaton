@@ -28,6 +28,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // --------------------------------------------
 
 // --- НАСТРОЙКА JWT АУТЕНТИФИКАЦИИ ---
+System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 var fixedSecretKey = "SuperSecretKeyGanttManager2026ProtectedAndLongEnough!";
 var fixedIssuer = "GanttManagerAPI";
 var fixedAudience = "GanttManagerClient";
@@ -103,8 +104,8 @@ app.UseRouting(); // 1. Сначала определяем маршрут за�
 
 app.UseCors("AllowAll"); // 2. Затем применяем CORS-политики
 
-//app.UseAuthentication(); // 3. Проверяем, кто пришел (Расшифровываем JWT)
-//app.UseAuthorization();  // 4. Проверяем права доступа к роуту
+app.UseAuthentication(); // 3. Проверяем, кто пришел (Расшифровываем JWT)
+app.UseAuthorization();  // 4. Проверяем права доступа к роуту
 
 app.MapControllers(); // 5. Направляем запрос в контроллер
 // -----------------------------------------------------------
