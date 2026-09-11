@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using GanttManager.API;
 
 namespace GanttManager.API.Controllers
 {
@@ -29,17 +30,32 @@ namespace GanttManager.API.Controllers
             return await _context.Projects.Include(p => p.Tasks).ToListAsync();
         }
 
-        // 2. Создать новый проект
+        // 2. Создать новый проект (Всеядный эндпоинт)
         [HttpPost("projects")]
-        public async Task<ActionResult<Project>> CreateProject([FromBody] Project project)
+        public async Task<ActionResult<Project>> CreateProject([FromBody] System.Text.Json.JsonElement json)
         {
-            _context.Projects.Add(project);
+            if (!json.TryGetProperty("name", out var nameProp))
+            {
+                return BadRequest(new { message = "Поле name является обязательным" });
+            }
+
+            var newProject = new Project
+            {
+                Id = Guid.NewGuid(),
+                Name = nameProp.GetString() ?? "Новый проект",
+                Description = json.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? "" : "",
+                OwnerId = json.TryGetProperty("ownerId", out var ownerProp) && Guid.TryParse(ownerProp.GetString(), out var oId) ? oId : Guid.Empty,
+                CreatedAt = DateTime.UtcNow,
+                Tasks = new List<TaskItem>()
+            };
+
+            _context.Projects.Add(newProject);
             await _context.SaveChangesAsync();
-            return Ok(project);
+            return Ok(newProject);
         }
 
         // ==========================================
-        // 📊 УПРАВЛЕНИЕ ЗАДАЧАМИ (ДЛЯ УЧАСТНИКА 2)
+        // 📊 УПРАВЛЕНИЕ ЗАЗАЧАМИ
         // ==========================================
 
         // 3. Получить все задачи конкретного проекта с их зависимостями
@@ -52,67 +68,99 @@ namespace GanttManager.API.Controllers
                 .ToListAsync();
         }
 
-        // 4. Создать новую задачу в проекте (Принимает ПЛОСКИЙ JSON)
+        // 4. Создать новую задачу в проекте (Чинит баг создания проектов вместо задач)
         [HttpPost("tasks")]
-        public async Task<ActionResult<TaskItem>> CreateTask([FromBody] TaskItem dto)
+        public async Task<ActionResult<TaskItem>> CreateTask([FromBody] System.Text.Json.JsonElement json)
         {
-            // Полностью сбрасываем автоматическую строгую валидацию .NET,
-            // чтобы убрать ошибки "The dto field is required"
-            ModelState.Clear();
-
-            // Защитная проверка на случай, если фронтенд прислал битый projectId
-            if (dto == null || dto.ProjectId == Guid.Empty)
+            if (!json.TryGetProperty("projectId", out var projProp) || !Guid.TryParse(projProp.GetString(), out var projId))
             {
-                return BadRequest(new { message = "Ошибка: Передан пустой или некорректный ProjectId! Он должен быть валидным Guid." });
+                return BadRequest(new { message = "Обязательное поле projectId отсутствует или имеет неверный формат GUID" });
             }
 
-            _context.Tasks.Add(dto);
+            // Проверяем, существует ли вообще такой проект в PostgreSQL
+            var projectExists = await _context.Projects.AnyAsync(p => p.Id == projId);
+            if (!projectExists)
+            {
+                return BadRequest(new { message = $"Проект с ID {projId} не найден в базе данных" });
+            }
+
+            if (!json.TryGetProperty("startDate", out var startProp) || !json.TryGetProperty("endDate", out var endProp))
+            {
+                return BadRequest(new { message = "Поля startDate и endDate обязательны для создания задачи" });
+            }
+
+            var newTask = new TaskItem
+            {
+                Id = Guid.NewGuid(), // Всегда жестко генерируем НОВЫЙ ID на бэке, чтобы не было конфликтов
+                ProjectId = projId,
+                Name = json.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "Новая задача" : "Новая задача",
+                Status = json.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? "Todo" : "Todo",
+                StartDate = startProp.GetDateTime(),
+                EndDate = endProp.GetDateTime(),
+                ExecutorId = json.TryGetProperty("executorId", out var execProp) && Guid.TryParse(execProp.GetString(), out var eId) ? eId : null,
+                Dependencies = new List<TaskDependency>()
+            };
+
+            _context.Tasks.Add(newTask);
             await _context.SaveChangesAsync();
-            return Ok(dto);
+            return Ok(newTask);
         }
 
-        // 5. ОБНОВЛЕНИЕ ЗАДАЧИ (СЮДА УЧАСТНИК 2 ВСТАВИТ ПЕРЕСЧЕТ ГАНТА)
+        // 5. ОБНОВЛЕНИЕ ЗАДАЧИ С КАСКАДНЫМ ПЕРЕСЧЕТОМ ДАТ ГАНТА
         [HttpPut("tasks/{id}")]
-        public async Task<IActionResult> UpdateTask(Guid id, [FromBody] TaskItem dto)
+        public async Task<IActionResult> UpdateTask(Guid id, [FromBody] System.Text.Json.JsonElement json)
         {
-            ModelState.Clear();
+            var task = await _context.Tasks
+                .Include(t => t.Dependencies)
+                .FirstOrDefaultAsync(t => t.Id == id);
 
-            if (dto == null) return BadRequest(new { message = "Данные не переданы" });
-            if (id != dto.Id) return BadRequest(new { message = "ID задачи не совпадает" });
-
-            var task = await _context.Tasks.FindAsync(id);
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
-            // Обновляем базовые поля, пришедшие с фронтенда из плоского объекта dto
-            task.Name = dto.Name;
-            task.Status = dto.Status;
-            task.StartDate = dto.StartDate;
-            task.EndDate = dto.EndDate;
-            task.ExecutorId = dto.ExecutorId;
-            task.ProjectId = dto.ProjectId;
+            if (!json.TryGetProperty("startDate", out var startProp) || !json.TryGetProperty("endDate", out var endProp))
+            {
+                return BadRequest(new { message = "Поля startDate и endDate обязательны для обновления" });
+            }
 
-            // ------------------------------------------------------------
-            // TODO ДЛЯ УЧАСТНИКА 2: 
-            // Вызвать алгоритм каскадного пересчета дат для зависимых задач!
-            // Например: Вызвать метод GanttService.Recalculate(task.ProjectId);
-            // ------------------------------------------------------------
+            DateTime newStartDate = startProp.GetDateTime();
+            DateTime newEndDate = endProp.GetDateTime();
+
+            // Вычисляем сдвиг по дням для твоего алгоритма Ганта
+            int daysShift = (newStartDate - task.StartDate).Days;
+
+            var validationService = new Services.TaskValidationService();
+            if (!validationService.ValidateDates(newStartDate, newEndDate, out string error))
+            {
+                return BadRequest(new { message = error });
+            }
+
+            if (json.TryGetProperty("name", out var nameProp)) task.Name = nameProp.GetString() ?? task.Name;
+            if (json.TryGetProperty("status", out var statusProp)) task.Status = statusProp.GetString() ?? task.Status;
+            if (json.TryGetProperty("executorId", out var execProp)) task.ExecutorId = Guid.TryParse(execProp.GetString(), out var eId) ? eId : null;
+
+            task.StartDate = newStartDate;
+            task.EndDate = newEndDate;
+
+            // Если ползунок сдвинули — запускаем твой каскадный BFS алгоритм
+            if (daysShift != 0)
+            {
+                var ganttEngine = new Services.GanttEngine();
+                await ganttEngine.RecalculateDependenciesAsync(_context, task.ProjectId, id, daysShift);
+            }
 
             await _context.SaveChangesAsync();
             return Ok(task);
         }
 
-        // 6. УДАЛЕНИЕ ЗАДАЧИ И ВСЕХ ЕЁ СВЯЗЕЙ (ДЛЯ ПУНКТА 4 ФРОНТЕНДА)
+        // 6. УДАЛЕНИЕ ЗАДАЧИ И ВСЕХ ЕЁ СВЯЗЕЙ
         [HttpDelete("tasks/{id}")]
         public async Task<IActionResult> DeleteTask(Guid id)
         {
             var task = await _context.Tasks.FindAsync(id);
             if (task == null) return NotFound(new { message = "Задача не найдена" });
 
-            // Удаляем задачу (связи в БД почистятся автоматически по правилу Cascade)
             _context.Tasks.Remove(task);
             await _context.SaveChangesAsync();
-
-            return NoContent(); // Статус 204 (Успешно удалено, контента нет)
+            return NoContent();
         }
     }
 }
