@@ -28,7 +28,6 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // --------------------------------------------
 
 // --- НАСТРОЙКА JWT АУТЕНТИФИКАЦИИ ---
-// Жестко фиксируем ключ и параметры, чтобы избежать расхождений с appsettings.json в облаке
 var fixedSecretKey = "SuperSecretKeyGanttManager2026ProtectedAndLongEnough!";
 var fixedIssuer = "GanttManagerAPI";
 var fixedAudience = "GanttManagerClient";
@@ -96,16 +95,19 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-app.UseRouting();
-app.UseCors("AllowAll");
-
+// --- СТРОГИЙ ПОРЯДОК СБОРКИ КОНВЕЙЕРА (ОШИБКА БЫЛА ТУТ) ---
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseAuthentication();
-app.UseAuthorization();
+app.UseRouting(); // 1. Сначала определяем маршрут запроса
 
-app.MapControllers();
+app.UseCors("AllowAll"); // 2. Затем применяем CORS-политики
+
+app.UseAuthentication(); // 3. Проверяем, кто пришел (Расшифровываем JWT)
+app.UseAuthorization();  // 4. Проверяем права доступа к роуту
+
+app.MapControllers(); // 5. Направляем запрос в контроллер
+// -----------------------------------------------------------
 
 using (var scope = app.Services.CreateScope())
 {
