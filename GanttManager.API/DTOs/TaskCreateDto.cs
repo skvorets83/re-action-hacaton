@@ -2,10 +2,10 @@
 {
     public class TaskCreateDto
     {
-        public Guid ProjectId { get; set; }       // К какому проекту привязана задача
-    public string Name { get; set; } = string.Empty; // Название задачи
-    public DateTime StartDate { get; set; }    // Дата начала
-    public DateTime EndDate { get; set; }      // Дата окончания
+        public Guid ProjectId { get; set; }     
+    public string Name { get; set; } = string.Empty; 
+    public DateTime StartDate { get; set; }   
+    public DateTime EndDate { get; set; }     
     public Guid? AssigneeId { get; set; }
     }
 }
